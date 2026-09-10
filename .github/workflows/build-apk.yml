@@ -1,4 +1,4 @@
-name: Build QuestMate Functional APK
+name: Build QuestMate APK
 
 on:
   workflow_dispatch:
@@ -11,11 +11,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -38,158 +39,189 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Create QuestMate
+      - name: Create QuestMate project
         run: |
-          rm -rf app
-          rm -f build.gradle settings.gradle gradle.properties
 
           mkdir -p app/src/main/java/com/questmate/app
           mkdir -p app/src/main/res/values
 
-          printf '%s\n' \
-          'pluginManagement {' \
-          '    repositories {' \
-          '        google()' \
-          '        mavenCentral()' \
-          '        gradlePluginPortal()' \
-          '    }' \
-          '}' \
-          '' \
-          'dependencyResolutionManagement {' \
-          '    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)' \
-          '    repositories {' \
-          '        google()' \
-          '        mavenCentral()' \
-          '    }' \
-          '}' \
-          '' \
-          'rootProject.name = "QuestMate"' \
-          'include(":app")' \
-          > settings.gradle
+          cat > settings.gradle <<'EOF'
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
 
-          printf '%s\n' \
-          'plugins {' \
-          '    id '\''com.android.application'\'' version '\''8.7.3'\'' apply false' \
-          '}' \
-          > build.gradle
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
 
-          printf '%s\n' \
-          'android.useAndroidX=true' \
-          'android.enableJetifier=true' \
-          > gradle.properties
+rootProject.name = "QuestMate"
+include(":app")
+EOF
 
-          printf '%s\n' \
-          'plugins {' \
-          '    id '\''com.android.application'\''' \
-          '}' \
-          '' \
-          'android {' \
-          '    namespace '\''com.questmate.app'\''' \
-          '    compileSdk 35' \
-          '' \
-          '    defaultConfig {' \
-          '        applicationId '\''com.questmate.app'\''' \
-          '        minSdk 23' \
-          '        targetSdk 35' \
-          '        versionCode 2' \
-          '        versionName '\''2.0'\''' \
-          '    }' \
-          '}' \
-          > app/build.gradle
+          cat > build.gradle <<'EOF'
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+}
+EOF
 
-          printf '%s\n' \
-          '<?xml version="1.0" encoding="utf-8"?>' \
-          '<manifest xmlns:android="http://schemas.android.com/apk/res/android">' \
-          '    <uses-permission android:name="android.permission.INTERNET" />' \
-          '    <application' \
-          '        android:allowBackup="false"' \
-          '        android:label="QuestMate 2.0"' \
-          '        android:theme="@style/AppTheme">' \
-          '        <activity' \
-          '            android:name=".MainActivity"' \
-          '            android:screenOrientation="portrait"' \
-          '            android:exported="true">' \
-          '            <intent-filter>' \
-          '                <action android:name="android.intent.action.MAIN" />' \
-          '                <category android:name="android.intent.category.LAUNCHER" />' \
-          '            </intent-filter>' \
-          '        </activity>' \
-          '    </application>' \
-          '</manifest>' \
-          > app/src/main/AndroidManifest.xml
+          cat > gradle.properties <<'EOF'
+android.useAndroidX=true
+android.enableJetifier=true
+org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+EOF
 
-          printf '%s\n' \
-          '<?xml version="1.0" encoding="utf-8"?>' \
-          '<resources>' \
-          '    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">' \
-          '        <item name="android:fontFamily">sans</item>' \
-          '        <item name="android:colorAccent">#4CAF50</item>' \
-          '        <item name="android:statusBarColor">#10131A</item>' \
-          '        <item name="android:navigationBarColor">#10131A</item>' \
-          '    </style>' \
-          '</resources>' \
-          > app/src/main/res/values/styles.xml
+          cat > app/build.gradle <<'EOF'
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.questmate.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.questmate.app'
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+}
+EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:theme="@style/AppTheme"
+        android:label="QuestMate"
+        android:allowBackup="true"
+        android:supportsRtl="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:screenOrientation="portrait"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+    </application>
+
+</manifest>
+EOF
+
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#10131A</item>
+        <item name="android:navigationBarColor">#10131A</item>
+    </style>
+
+</resources>
+EOF
 
           cat > app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
-          package com.questmate.app;
+package com.questmate.app;
 
-          import android.app.Activity;
-          import android.app.AlertDialog;
-          import android.os.Bundle;
-          import android.graphics.Color;
-          import android.graphics.Typeface;
-          import android.view.Gravity;
-          import android.widget.Button;
-          import android.widget.EditText;
-          import android.widget.LinearLayout;
-          import android.widget.ScrollView;
-          import android.widget.TextView;
-          import android.widget.Toast;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.os.Bundle;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
 
-          import org.json.JSONArray;
-          import org.json.JSONObject;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
-          import java.io.BufferedReader;
-          import java.io.InputStreamReader;
-          import java.net.HttpURLConnection;
-          import java.net.URL;
-          import java.util.Locale;
-          import java.util.concurrent.ExecutorService;
-          import java.util.concurrent.Executors;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-          public class MainActivity extends Activity {
+public class MainActivity extends Activity {
 
-              private EditText itemSearch;
-              private TextView result;
-              private final ExecutorService executor =
-                      Executors.newSingleThreadExecutor();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
-              private static final String MAPPING =
-                      "https://prices.runescape.wiki/api/v1/osrs/mapping";
+    private static final String MAPPING_URL =
+            "https://prices.runescape.wiki/api/v1/osrs/mapping";
 
-              private static final String LATEST =
-                      "https://prices.runescape.wiki/api/v1/osrs/latest";
+    private static final String LATEST_URL =
+            "https://prices.runescape.wiki/api/v1/osrs/latest";
 
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  createScreen();
-              }
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
 
-              private void createScreen() {
+        buildMainScreen();
+    }
 
-                  ScrollView scroll = new ScrollView(this);
+    private void buildMainScreen() {
 
-                  LinearLayout root = new LinearLayout(this);
-                  root.setOrientation(LinearLayout.VERTICAL);
-                  root.setPadding(25, 35, 25, 40);
-                  root.setBackgroundColor(Color.rgb(16,19,26));
+        ScrollView scrollView = new ScrollView(this);
 
-                  TextView title = new TextView(this);
-                  title.setText("QuestMate");
-                  title.setTextSize(38);
-                  title.setTypeface(null, Typeface.BOLD);
-                  title.setTextColor(Color.WHITE);
-                  title.setGravity(Gravity.CENTER);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(32, 40, 32, 40);
+        root.setBackgroundColor(Color.rgb(16, 19, 26));
 
-                 
+        TextView title = new TextView(this);
+        title.setText("QuestMate");
+        title.setTextSize(36);
+        title.setTypeface(null, Typeface.BOLD);
+        title.setTextColor(Color.WHITE);
+        title.setGravity(Gravity.CENTER);
+
+        TextView subtitle = new TextView(this);
+        subtitle.setText("OSRS Quest & Item Companion");
+        subtitle.setTextSize(17);
+        subtitle.setTextColor(Color.LTGRAY);
+        subtitle.setGravity(Gravity.CENTER);
+        subtitle.setPadding(0, 10, 0, 35);
+
+        Button questButton = new Button(this);
+        questButton.setText("QUEST GUIDE");
+        questButton.setTextSize(17);
+
+        questButton.setOnClickListener(v -> showQuestGuide());
+
+        EditText itemSearch = new EditText(this);
+        itemSearch.setHint("Search OSRS item...");
+        itemSearch.setSingleLine(true);
+        itemSearch.setTextColor(Color.WHITE);
+        itemSearch.setHintTextColor(Color.GRAY);
+        itemSearch.setTextSize(18);
+        itemSearch.setPadding(0, 20, 0, 20);
+
+        Button priceButton = new Button(this);
+       
