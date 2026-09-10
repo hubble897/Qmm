@@ -23,7 +23,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK
         run: |
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
@@ -89,21 +89,10 @@ jobs:
                   applicationId 'com.questmate.app'
                   minSdk 23
                   targetSdk 35
-                  versionCode 1
-                  versionName '1.0'
+                  versionCode 2
+                  versionName '2.0'
               }
           }
-          EOF
-
-          cat > app/src/main/res/values/styles.xml <<'EOF'
-          <resources>
-              <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
-                  <item name="android:fontFamily">sans</item>
-                  <item name="android:windowLightStatusBar">false</item>
-                  <item name="android:statusBarColor">#10131A</item>
-                  <item name="android:navigationBarColor">#10131A</item>
-              </style>
-          </resources>
           EOF
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
@@ -131,6 +120,21 @@ jobs:
               </application>
 
           </manifest>
+          EOF
+
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+
+              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">#8AB4F8</item>
+                  <item name="android:navigationBarColor">#10131A</item>
+                  <item name="android:statusBarColor">#10131A</item>
+                  <item name="android:windowLightStatusBar">false</item>
+              </style>
+
+          </resources>
           EOF
 
           cat > app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
@@ -167,147 +171,5 @@ jobs:
 
               private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
-              private TextView resultText;
               private EditText itemSearch;
-              private Button priceButton;
-
-              private static final String MAPPING_URL =
-                      "https://prices.runescape.wiki/api/v1/osrs/mapping";
-
-              private static final String LATEST_URL =
-                      "https://prices.runescape.wiki/api/v1/osrs/latest";
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-
-                  createMainScreen();
-              }
-
-              private void createMainScreen() {
-
-                  ScrollView scrollView = new ScrollView(this);
-                  scrollView.setBackgroundColor(Color.rgb(16, 19, 26));
-
-                  LinearLayout root = new LinearLayout(this);
-                  root.setOrientation(LinearLayout.VERTICAL);
-                  root.setPadding(25, 35, 25, 40);
-
-                  TextView title = new TextView(this);
-                  title.setText("QuestMate");
-                  title.setTextSize(36);
-                  title.setTypeface(null, Typeface.BOLD);
-                  title.setTextColor(Color.WHITE);
-                  title.setGravity(Gravity.CENTER);
-
-                  TextView subtitle = new TextView(this);
-                  subtitle.setText("OSRS Quest & Item Companion");
-                  subtitle.setTextSize(17);
-                  subtitle.setTextColor(Color.LTGRAY);
-                  subtitle.setGravity(Gravity.CENTER);
-                  subtitle.setPadding(0, 10, 0, 30);
-
-                  Button questButton = new Button(this);
-                  questButton.setText("QUEST GUIDE");
-                  questButton.setTextSize(16);
-
-                  questButton.setOnClickListener(new View.OnClickListener() {
-                      @Override
-                      public void onClick(View v) {
-                          showQuestGuide();
-                      }
-                  });
-
-                  itemSearch = new EditText(this);
-                  itemSearch.setHint("Search OSRS item...");
-                  itemSearch.setSingleLine(true);
-                  itemSearch.setTextColor(Color.WHITE);
-                  itemSearch.setHintTextColor(Color.GRAY);
-                  itemSearch.setTextSize(18);
-                  itemSearch.setPadding(5, 20, 5, 20);
-
-                  priceButton = new Button(this);
-                  priceButton.setText("CHECK OSRS PRICE");
-                  priceButton.setTextSize(16);
-
-                  priceButton.setOnClickListener(new View.OnClickListener() {
-                      @Override
-                      public void onClick(View v) {
-                          checkPrice();
-                      }
-                  });
-
-                  resultText = new TextView(this);
-                  resultText.setText("");
-                  resultText.setTextColor(Color.WHITE);
-                  resultText.setTextSize(18);
-                  resultText.setPadding(10, 30, 10, 10);
-
-                  root.addView(title);
-                  root.addView(subtitle);
-                  root.addView(questButton);
-
-                  root.addView(itemSearch);
-
-                  root.addView(priceButton);
-                  root.addView(resultText);
-
-                  scrollView.addView(root);
-
-                  setContentView(scrollView);
-              }
-
-              private void showQuestGuide() {
-
-                  final String[] quests = {
-                          "Cook's Assistant",
-                          "The Restless Ghost",
-                          "Sheep Shearer",
-                          "Rune Mysteries",
-                          "Romeo & Juliet",
-                          "Waterfall Quest"
-                  };
-
-                  final String[] details = {
-                          "Start: Cook in Lumbridge Castle\n\nRequirements: None\n\nGoal: Help the Cook collect the ingredients needed to make a cake.",
-
-                          "Start: Father Aereck in the Lumbridge church\n\nRequirements: None\n\nGoal: Help Father Aereck deal with the ghost haunting the church graveyard.",
-
-                          "Start: Farmer Fred at his farm north-west of Lumbridge\n\nRequirements: None\n\nGoal: Shear 20 sheep and spin the wool.",
-
-                          "Start: Duke Horacio in Lumbridge Castle\n\nRequirements: None\n\nGoal: Investigate the mysterious rune and deliver it to the appropriate wizard.",
-
-                          "Start: Romeo in Varrock\n\nRequirements: None\n\nGoal: Help Romeo and Juliet overcome the problems keeping them apart.",
-
-                          "Start: Hudon at the Gnome Stronghold waterfall area\n\nRequirements: Combat is recommended.\n\nGoal: Explore the waterfall and recover the treasures hidden inside."
-                  };
-
-                  AlertDialog.Builder builder = new AlertDialog.Builder(this);
-                  builder.setTitle("OSRS Quest Guide");
-
-                  builder.setItems(quests, (dialog, which) -> {
-                      new AlertDialog.Builder(MainActivity.this)
-                              .setTitle(quests[which])
-                              .setMessage(details[which])
-                              .setPositiveButton("OK", null)
-                              .show();
-                  });
-
-                  builder.setNegativeButton("CLOSE", null);
-                  builder.show();
-              }
-
-              private void checkPrice() {
-
-                  final String query = itemSearch.getText().toString().trim();
-
-                  if (query.isEmpty()) {
-                      Toast.makeText(
-                              this,
-                              "Enter an OSRS item name first",
-                              Toast.LENGTH_SHORT
-                      ).show();
-                      return;
-                  }
-
-                  price
+              private Text
