@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -37,8 +38,10 @@ jobs:
 
       - name: Create QuestMate project
         run: |
+
           mkdir -p app/src/main/java/com/questmate/app
           mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/assets
 
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -51,6 +54,7 @@ jobs:
 
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
               repositories {
                   google()
                   mavenCentral()
@@ -85,14 +89,15 @@ jobs:
                   applicationId 'com.questmate.app'
                   minSdk 23
                   targetSdk 35
-                  versionCode 1
-                  versionName '1.0'
+                  versionCode 2
+                  versionName '2.0'
               }
           }
           EOF
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
+
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
               <uses-permission android:name="android.permission.INTERNET" />
@@ -107,8 +112,12 @@ jobs:
                       android:exported="true">
 
                       <intent-filter>
+
                           <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
+
+                          <category
+                              android:name="android.intent.category.LAUNCHER" />
+
                       </intent-filter>
 
                   </activity>
@@ -120,16 +129,189 @@ jobs:
 
           cat > app/src/main/res/values/styles.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
+
           <resources>
 
-              <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+              <style
+                  name="AppTheme"
+                  parent="android:style/Theme.Material.NoActionBar">
+
                   <item name="android:fontFamily">sans</item>
                   <item name="android:colorAccent">#66BB6A</item>
                   <item name="android:navigationBarColor">#10131A</item>
                   <item name="android:statusBarColor">#10131A</item>
+
               </style>
 
           </resources>
+          EOF
+
+          cat > app/src/main/assets/quests.json <<'EOF'
+          [
+            {
+              "name": "Cook's Assistant",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Very Short",
+              "questPoints": 1,
+              "start": "Cook in Lumbridge Castle",
+              "requirements": [
+                "None"
+              ],
+              "items": [
+                "Pot",
+                "Bucket",
+                "Egg"
+              ],
+              "steps": [
+                "Talk to the Cook in the kitchen of Lumbridge Castle.",
+                "Tell the Cook you will help him prepare the Duke's birthday cake.",
+                "Get an egg from the chicken farm north-east of Lumbridge.",
+                "Get a bucket of milk from a dairy cow.",
+                "Get a pot of flour. You can buy flour or collect grain and use the windmill.",
+                "Return to the Cook in Lumbridge Castle.",
+                "Give the Cook the egg, bucket of milk and pot of flour.",
+                "The quest is complete."
+              ],
+              "rewards": [
+                "1 Quest Point",
+                "300 Cooking XP"
+              ]
+            },
+
+            {
+              "name": "The Restless Ghost",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Short",
+              "questPoints": 1,
+              "start": "Father Aereck in the Lumbridge chapel",
+              "requirements": [
+                "None",
+                "You must be able to avoid or survive a level 13 skeleton"
+              ],
+              "items": [
+                "None required to start"
+              ],
+              "steps": [
+                "Speak to Father Aereck in the Lumbridge chapel.",
+                "Ask him about the ghost in the graveyard.",
+                "Travel south through Lumbridge Swamp to Father Urhney's house.",
+                "Speak to Father Urhney and receive the ghostspeak amulet.",
+                "Return to the Lumbridge graveyard.",
+                "Wear the ghostspeak amulet and search the coffin.",
+                "Speak to the Restless Ghost.",
+                "Travel to the Wizards' Tower south of Draynor Village.",
+                "Go downstairs in the Wizards' Tower.",
+                "Search the altar to obtain the ghost's skull.",
+                "A level 13 skeleton appears. You can run away instead of fighting it.",
+                "Return to the Lumbridge graveyard.",
+                "Use the ghost's skull on the coffin.",
+                "The ghost will disappear and the quest will be completed."
+              ],
+              "rewards": [
+                "1 Quest Point",
+                "1,125 Prayer XP",
+                "Ghostspeak amulet"
+              ]
+            },
+
+            {
+              "name": "Sheep Shearer",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Very Short",
+              "questPoints": 1,
+              "start": "Farmer Fred at the farm north of Lumbridge",
+              "requirements": [
+                "None"
+              ],
+              "items": [
+                "Shears"
+              ],
+              "steps": [
+                "Speak to Farmer Fred at his farm north of Lumbridge.",
+                "Agree to shear his sheep.",
+                "Get a pair of shears if you do not already have them.",
+                "Shear sheep in the nearby field.",
+                "Collect 20 balls of wool.",
+                "Use the wool on a spinning wheel to turn it into balls of wool.",
+                "The Lumbridge Castle spinning wheel is a convenient option.",
+                "Return to Farmer Fred.",
+                "Give him the 20 balls of wool.",
+                "The quest is complete."
+              ],
+              "rewards": [
+                "1 Quest Point",
+                "150 Crafting XP"
+              ]
+            },
+
+            {
+              "name": "Rune Mysteries",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Short",
+              "questPoints": 1,
+              "start": "Duke Horacio in Lumbridge Castle",
+              "requirements": [
+                "None"
+              ],
+              "items": [
+                "None"
+              ],
+              "steps": [
+                "Speak to Duke Horacio in Lumbridge Castle.",
+                "Ask him about the mysterious talisman.",
+                "Take the air talisman to Archmage Sedridor in the Wizards' Tower.",
+                "Speak to Sedridor in the basement of the Wizards' Tower.",
+                "Take Sedridor's research package to Aubury in Varrock.",
+                "Go to Aubury's Rune Shop in Varrock.",
+                "Speak to Aubury and give him the research package.",
+                "Return to Sedridor with Aubury's information.",
+                "Speak to Sedridor to complete the quest."
+              ],
+              "rewards": [
+                "1 Quest Point",
+                "Access to Runecrafting",
+                "Air talisman"
+              ]
+            },
+
+            {
+              "name": "Romeo & Juliet",
+              "members": false,
+              "difficulty": "Novice",
+              "length": "Short",
+              "questPoints": 5,
+              "start": "Romeo in Varrock",
+              "requirements": [
+                "None"
+              ],
+              "items": [
+                "Cadava berries",
+                "Cadava potion"
+              ],
+              "steps": [
+                "Speak to Romeo in Varrock.",
+                "Agree to help him with Juliet.",
+                "Speak to Juliet on the balcony of her house.",
+                "Return to Romeo and tell him Juliet wants help.",
+                "Speak to Father Lawrence in Varrock.",
+                "Find Apothecary in south-west Varrock.",
+                "Collect cadava berries near Varrock.",
+                "Give the cadava berries to Apothecary.",
+                "Receive the cadava potion.",
+                "Give the potion to Juliet.",
+                "Return to Romeo.",
+                "Complete the final conversation.",
+                "The quest is complete."
+              ],
+              "rewards": [
+                "5 Quest Points"
+              ]
+            }
+          ]
           EOF
 
           cat > app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
@@ -140,19 +322,27 @@ jobs:
           import android.graphics.Color;
           import android.graphics.Typeface;
           import android.os.Bundle;
+          import android.text.Editable;
+          import android.text.TextWatcher;
           import android.view.Gravity;
+          import android.view.View;
           import android.widget.Button;
+          import android.widget.CheckBox;
           import android.widget.EditText;
           import android.widget.LinearLayout;
+          import android.widget.ScrollView;
           import android.widget.TextView;
 
           import org.json.JSONArray;
           import org.json.JSONObject;
 
           import java.io.BufferedReader;
+          import java.io.InputStream;
           import java.io.InputStreamReader;
           import java.net.HttpURLConnection;
           import java.net.URL;
+          import java.util.ArrayList;
+          import java.util.List;
           import java.util.Locale;
           import java.util.concurrent.ExecutorService;
           import java.util.concurrent.Executors;
@@ -172,47 +362,101 @@ jobs:
               private EditText itemSearch;
               private Button priceButton;
 
+              private final List<Quest> quests =
+                      new ArrayList<>();
+
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
 
-                  LinearLayout root = new LinearLayout(this);
-                  root.setOrientation(LinearLayout.VERTICAL);
-                  root.setPadding(24, 40, 24, 24);
-                  root.setBackgroundColor(Color.rgb(16, 19, 26));
+                  loadQuests();
 
-                  TextView title = new TextView(this);
+                  LinearLayout root =
+                          new LinearLayout(this);
+
+                  root.setOrientation(
+                          LinearLayout.VERTICAL);
+
+                  root.setPadding(
+                          24,
+                          40,
+                          24,
+                          24);
+
+                  root.setBackgroundColor(
+                          Color.rgb(16, 19, 26));
+
+                  TextView title =
+                          new TextView(this);
+
                   title.setText("QuestMate");
                   title.setTextSize(34);
-                  title.setTypeface(null, Typeface.BOLD);
+                  title.setTypeface(
+                          null,
+                          Typeface.BOLD);
+
                   title.setTextColor(Color.WHITE);
                   title.setGravity(Gravity.CENTER);
 
-                  TextView subtitle = new TextView(this);
-                  subtitle.setText("OSRS Quest & Item Companion");
+                  TextView subtitle =
+                          new TextView(this);
+
+                  subtitle.setText(
+                          "OSRS Quest & Item Companion");
+
                   subtitle.setTextSize(17);
                   subtitle.setTextColor(Color.LTGRAY);
                   subtitle.setGravity(Gravity.CENTER);
-                  subtitle.setPadding(0, 10, 0, 24);
 
-                  Button questButton = new Button(this);
-                  questButton.setText("QUEST GUIDE");
-                  questButton.setOnClickListener(v -> showQuestGuide());
+                  subtitle.setPadding(
+                          0,
+                          10,
+                          0,
+                          24);
 
-                  itemSearch = new EditText(this);
-                  itemSearch.setHint("Search OSRS item...");
+                  Button questButton =
+                          new Button(this);
+
+                  questButton.setText(
+                          "QUEST GUIDE");
+
+                  questButton.setOnClickListener(
+                          v -> showQuestGuide());
+
+                  itemSearch =
+                          new EditText(this);
+
+                  itemSearch.setHint(
+                          "Search OSRS item...");
+
                   itemSearch.setSingleLine(true);
                   itemSearch.setTextColor(Color.WHITE);
-                  itemSearch.setHintTextColor(Color.GRAY);
+                  itemSearch.setHintTextColor(
+                          Color.GRAY);
 
-                  priceButton = new Button(this);
-                  priceButton.setText("CHECK OSRS PRICE");
-                  priceButton.setOnClickListener(v -> checkPrice());
+                  priceButton =
+                          new Button(this);
 
-                  resultText = new TextView(this);
-                  resultText.setTextColor(Color.WHITE);
+                  priceButton.setText(
+                          "CHECK OSRS PRICE");
+
+                  priceButton.setOnClickListener(
+                          v -> checkPrice());
+
+                  resultText =
+                          new TextView(this);
+
+                  resultText.setTextColor(
+                          Color.WHITE);
+
                   resultText.setTextSize(18);
-                  resultText.setPadding(8, 24, 8, 8);
+
+                  resultText.setPadding(
+                          8,
+                          24,
+                          8,
+                          8);
+
                   resultText.setText("Ready.");
 
                   root.addView(title);
@@ -225,97 +469,453 @@ jobs:
                   setContentView(root);
               }
 
+              private void loadQuests() {
+
+                  try {
+
+                      InputStream input =
+                              getAssets().open(
+                                      "quests.json");
+
+                      BufferedReader reader =
+                              new BufferedReader(
+                                      new InputStreamReader(
+                                              input));
+
+                      StringBuilder json =
+                              new StringBuilder();
+
+                      String line;
+
+                      while ((line =
+                              reader.readLine()) != null) {
+
+                          json.append(line);
+                      }
+
+                      reader.close();
+
+                      JSONArray array =
+                              new JSONArray(
+                                      json.toString());
+
+                      for (int i = 0;
+                           i < array.length();
+                           i++) {
+
+                          JSONObject object =
+                                  array.getJSONObject(i);
+
+                          Quest quest =
+                                  new Quest();
+
+                          quest.name =
+                                  object.optString(
+                                          "name");
+
+                          quest.members =
+                                  object.optBoolean(
+                                          "members");
+
+                          quest.difficulty =
+                                  object.optString(
+                                          "difficulty");
+
+                          quest.length =
+                                  object.optString(
+                                          "length");
+
+                          quest.questPoints =
+                                  object.optInt(
+                                          "questPoints");
+
+                          quest.start =
+                                  object.optString(
+                                          "start");
+
+                          quest.requirements =
+                                  readArray(
+                                          object,
+                                          "requirements");
+
+                          quest.items =
+                                  readArray(
+                                          object,
+                                          "items");
+
+                          quest.steps =
+                                  readArray(
+                                          object,
+                                          "steps");
+
+                          quest.rewards =
+                                  readArray(
+                                          object,
+                                          "rewards");
+
+                          quests.add(quest);
+                      }
+
+                  } catch (Exception e) {
+
+                      e.printStackTrace();
+                  }
+              }
+
+              private List<String> readArray(
+                      JSONObject object,
+                      String name) {
+
+                  List<String> result =
+                          new ArrayList<>();
+
+                  JSONArray array =
+                          object.optJSONArray(name);
+
+                  if (array == null) {
+                      return result;
+                  }
+
+                  for (int i = 0;
+                       i < array.length();
+                       i++) {
+
+                      result.add(
+                              array.optString(i));
+                  }
+
+                  return result;
+              }
+
               private void showQuestGuide() {
-                  String[] quests = {
-                          "Cook's Assistant",
-                          "The Restless Ghost",
-                          "Sheep Shearer",
-                          "Rune Mysteries",
-                          "Romeo & Juliet"
-                  };
+
+                  final AlertDialog dialog =
+                          new AlertDialog.Builder(this)
+                                  .create();
+
+                  LinearLayout root =
+                          new LinearLayout(this);
+
+                  root.setOrientation(
+                          LinearLayout.VERTICAL);
+
+                  root.setPadding(
+                          20,
+                          20,
+                          20,
+                          20);
+
+                  TextView title =
+                          new TextView(this);
+
+                  title.setText(
+                          "OSRS QUEST GUIDE");
+
+                  title.setTextSize(24);
+
+                  title.setTypeface(
+                          null,
+                          Typeface.BOLD);
+
+                  title.setTextColor(Color.WHITE);
+
+                  EditText search =
+                          new EditText(this);
+
+                  search.setHint(
+                          "Search quests...");
+
+                  search.setSingleLine(true);
+
+                  LinearLayout list =
+                          new LinearLayout(this);
+
+                  list.setOrientation(
+                          LinearLayout.VERTICAL);
+
+                  ScrollView scroll =
+                          new ScrollView(this);
+
+                  scroll.addView(list);
+
+                  root.addView(title);
+                  root.addView(search);
+                  root.addView(scroll);
+
+                  dialog.setView(root);
+
+                  Runnable refresh =
+                          () -> {
+
+                              list.removeAllViews();
+
+                              String query =
+                                      search.getText()
+                                              .toString()
+                                              .toLowerCase(
+                                                      Locale.US);
+
+                              for (Quest quest :
+                                      quests) {
+
+                                  if (!quest.name
+                                          .toLowerCase(
+                                                  Locale.US)
+                                          .contains(query)) {
+                                      continue;
+                                  }
+
+                                  Button button =
+                                          new Button(
+                                                  this);
+
+                                  String label =
+                                          quest.name +
+                                          (quest.members
+                                                  ? "  [Members]"
+                                                  : "  [F2P]");
+
+                                  button.setText(label);
+
+                                  button.setOnClickListener(
+                                          v -> {
+                                              dialog.dismiss();
+                                              showQuestDetails(
+                                                      quest);
+                                          });
+
+                                  list.addView(button);
+                              }
+                          };
+
+                  search.addTextChangedListener(
+                          new TextWatcher() {
+
+                              @Override
+                              public void beforeTextChanged(
+                                      CharSequence s,
+                                      int start,
+                                      int count,
+                                      int after) {
+                              }
+
+                              @Override
+                              public void onTextChanged(
+                                      CharSequence s,
+                                      int start,
+                                      int before,
+                                      int count) {
+
+                                  refresh.run();
+                              }
+
+                              @Override
+                              public void afterTextChanged(
+                                      Editable s) {
+                              }
+                          });
+
+                  refresh.run();
+
+                  dialog.show();
+              }
+
+              private void showQuestDetails(
+                      Quest quest) {
+
+                  LinearLayout root =
+                          new LinearLayout(this);
+
+                  root.setOrientation(
+                          LinearLayout.VERTICAL);
+
+                  root.setPadding(
+                          20,
+                          10,
+                          20,
+                          10);
+
+                  ScrollView scroll =
+                          new ScrollView(this);
+
+                  scroll.addView(root);
+
+                  TextView title =
+                          new TextView(this);
+
+                  title.setText(
+                          quest.name);
+
+                  title.setTextSize(27);
+
+                  title.setTypeface(
+                          null,
+                          Typeface.BOLD);
+
+                  root.addView(title);
+
+                  TextView info =
+                          new TextView(this);
+
+                  info.setText(
+                          "\n" +
+                          "Difficulty: " +
+                          quest.difficulty +
+                          "\n" +
+                          "Length: " +
+                          quest.length +
+                          "\n" +
+                          "Quest Points: " +
+                          quest.questPoints +
+                          "\n\n" +
+                          "Start: " +
+                          quest.start);
+
+                  info.setTextSize(17);
+
+                  root.addView(info);
+
+                  addSection(
+                          root,
+                          "REQUIREMENTS",
+                          quest.requirements);
+
+                  addSection(
+                          root,
+                          "ITEMS",
+                          quest.items);
+
+                  TextView stepsTitle =
+                          new TextView(this);
+
+                  stepsTitle.setText(
+                          "\nSTEP-BY-STEP WALKTHROUGH");
+
+                  stepsTitle.setTextSize(20);
+
+                  stepsTitle.setTypeface(
+                          null,
+                          Typeface.BOLD);
+
+                  root.addView(stepsTitle);
+
+                  int stepNumber = 1;
+
+                  for (String step :
+                          quest.steps) {
+
+                      CheckBox checkBox =
+                              new CheckBox(this);
+
+                      checkBox.setText(
+                              stepNumber +
+                              ". " +
+                              step);
+
+                      checkBox.setTextSize(16);
+
+                      checkBox.setPadding(
+                              0,
+                              8,
+                              0,
+                              8);
+
+                      root.addView(checkBox);
+
+                      stepNumber++;
+                  }
+
+                  addSection(
+                          root,
+                          "REWARDS",
+                          quest.rewards);
 
                   new AlertDialog.Builder(this)
-                          .setTitle("Quest Guide")
-                          .setItems(quests,
-                                  (dialog, which) ->
-                                          showQuestDetails(quests[which]))
-                          .setNegativeButton("Close", null)
+                          .setTitle(quest.name)
+                          .setView(scroll)
+                          .setPositiveButton(
+                                  "DONE",
+                                  null)
                           .show();
               }
 
-              private void showQuestDetails(String quest) {
-                  String details;
+              private void addSection(
+                      LinearLayout root,
+                      String title,
+                      List<String> values) {
 
-                  switch (quest) {
-                      case "Cook's Assistant":
-                          details =
-                                  "Start: Cook in Lumbridge Castle\n\n" +
-                                  "Requirements: None\n\n" +
-                                  "Bring the Cook an egg, a bucket of milk " +
-                                  "and a pot of flour.";
-                          break;
+                  TextView heading =
+                          new TextView(this);
 
-                      case "The Restless Ghost":
-                          details =
-                                  "Start: Father Aereck in the Lumbridge church\n\n" +
-                                  "Requirements: None\n\n" +
-                                  "Investigate the ghost and help it rest.";
-                          break;
+                  heading.setText(
+                          "\n" + title);
 
-                      case "Sheep Shearer":
-                          details =
-                                  "Start: Farmer Fred near Lumbridge\n\n" +
-                                  "Requirements: None\n\n" +
-                                  "Shear 20 sheep and turn the wool into balls.";
-                          break;
+                  heading.setTextSize(20);
 
-                      case "Rune Mysteries":
-                          details =
-                                  "Start: Duke Horacio in Lumbridge Castle\n\n" +
-                                  "Requirements: None\n\n" +
-                                  "Take the mysterious talisman to Sedridor.";
-                          break;
+                  heading.setTypeface(
+                          null,
+                          Typeface.BOLD);
 
-                      default:
-                          details =
-                                  "Start: Romeo in Varrock\n\n" +
-                                  "Requirements: None\n\n" +
-                                  "Help Romeo and Juliet reunite.";
-                          break;
+                  root.addView(heading);
+
+                  for (String value :
+                          values) {
+
+                      TextView text =
+                              new TextView(this);
+
+                      text.setText(
+                              "• " + value);
+
+                      text.setTextSize(16);
+
+                      text.setPadding(
+                              0,
+                              5,
+                              0,
+                              5);
+
+                      root.addView(text);
                   }
-
-                  new AlertDialog.Builder(this)
-                          .setTitle(quest)
-                          .setMessage(details)
-                          .setPositiveButton("OK", null)
-                          .show();
               }
 
               private void checkPrice() {
+
                   final String query =
-                          itemSearch.getText().toString().trim();
+                          itemSearch.getText()
+                                  .toString()
+                                  .trim();
 
                   if (query.isEmpty()) {
+
                       resultText.setText(
                               "Type an OSRS item name first.");
+
                       return;
                   }
 
                   priceButton.setEnabled(false);
+
                   resultText.setText(
-                          "Looking up " + query + "...");
+                          "Looking up " +
+                          query +
+                          "...");
 
                   executor.execute(() -> {
 
                       try {
+
                           JSONArray mapping =
-                                  new JSONArray(getJson(MAPPING_URL));
+                                  new JSONArray(
+                                          getJson(
+                                                  MAPPING_URL));
 
                           int itemId = -1;
                           String itemName = null;
 
                           String search =
-                                  query.toLowerCase(Locale.US);
+                                  query.toLowerCase(
+                                          Locale.US);
 
                           for (int i = 0;
                                i < mapping.length();
@@ -325,40 +925,58 @@ jobs:
                                       mapping.getJSONObject(i);
 
                               String name =
-                                      item.optString("name", "");
+                                      item.optString(
+                                              "name",
+                                              "");
 
-                              if (name.equalsIgnoreCase(query)) {
+                              if (name.equalsIgnoreCase(
+                                      query)) {
+
                                   itemId =
-                                          item.optInt("id", -1);
+                                          item.optInt(
+                                                  "id",
+                                                  -1);
+
                                   itemName = name;
+
                                   break;
                               }
                           }
 
                           if (itemId == -1) {
+
                               for (int i = 0;
                                    i < mapping.length();
                                    i++) {
 
                                   JSONObject item =
-                                          mapping.getJSONObject(i);
+                                          mapping.getJSONObject(
+                                                  i);
 
                                   String name =
-                                          item.optString("name", "");
+                                          item.optString(
+                                                  "name",
+                                                  "");
 
-                                  if (name.toLowerCase(Locale.US)
+                                  if (name
+                                          .toLowerCase(
+                                                  Locale.US)
                                           .contains(search)) {
 
                                       itemId =
-                                              item.optInt("id", -1);
+                                              item.optInt(
+                                                      "id",
+                                                      -1);
 
                                       itemName = name;
+
                                       break;
                                   }
                               }
                           }
 
                           if (itemId == -1) {
+
                               throw new Exception(
                                       "Item not found.");
                           }
@@ -373,30 +991,39 @@ jobs:
                                   new JSONObject(json);
 
                           JSONObject data =
-                                  root.getJSONObject("data");
+                                  root.getJSONObject(
+                                          "data");
 
                           JSONObject price =
                                   data.getJSONObject(
-                                          String.valueOf(itemId));
+                                          String.valueOf(
+                                                  itemId));
 
                           int high =
-                                  price.optInt("high", 0);
+                                  price.optInt(
+                                          "high",
+                                          0);
 
                           int low =
-                                  price.optInt("low", 0);
+                                  price.optInt(
+                                          "low",
+                                          0);
 
                           final String message =
-                                  itemName + "\n\n" +
-                                  "High: " +
+                                  itemName +
+                                  "\n\nHigh: " +
                                   formatGp(high) +
-                                  " gp\n" +
-                                  "Low: " +
+                                  " gp\nLow: " +
                                   formatGp(low) +
                                   " gp";
 
                           runOnUiThread(() -> {
-                              priceButton.setEnabled(true);
-                              resultText.setText(message);
+
+                              priceButton
+                                      .setEnabled(true);
+
+                              resultText
+                                      .setText(message);
                           });
 
                       } catch (Exception e) {
@@ -406,14 +1033,19 @@ jobs:
                                   e.getMessage();
 
                           runOnUiThread(() -> {
-                              priceButton.setEnabled(true);
-                              resultText.setText(message);
+
+                              priceButton
+                                      .setEnabled(true);
+
+                              resultText
+                                      .setText(message);
                           });
                       }
                   });
               }
 
-              private String getJson(String urlString)
+              private String getJson(
+                      String urlString)
                       throws Exception {
 
                   HttpURLConnection connection =
@@ -422,16 +1054,23 @@ jobs:
                                           .openConnection();
 
                   try {
-                      connection.setRequestMethod("GET");
-                      connection.setConnectTimeout(10000);
-                      connection.setReadTimeout(15000);
+
+                      connection.setRequestMethod(
+                              "GET");
+
+                      connection.setConnectTimeout(
+                              10000);
+
+                      connection.setReadTimeout(
+                              15000);
 
                       connection.setRequestProperty(
                               "User-Agent",
-                              "QuestMate/1.0");
+                              "QuestMate/2.0");
 
                       int code =
-                              connection.getResponseCode();
+                              connection
+                                      .getResponseCode();
 
                       if (code !=
                               HttpURLConnection.HTTP_OK) {
@@ -462,11 +1101,14 @@ jobs:
                       return result.toString();
 
                   } finally {
+
                       connection.disconnect();
                   }
               }
 
-              private String formatGp(int value) {
+              private String formatGp(
+                      int value) {
+
                   return String.format(
                           Locale.US,
                           "%,d",
@@ -475,25 +1117,54 @@ jobs:
 
               @Override
               protected void onDestroy() {
+
                   executor.shutdownNow();
+
                   super.onDestroy();
+              }
+
+              private static class Quest {
+
+                  String name;
+                  boolean members;
+                  String difficulty;
+                  String length;
+                  int questPoints;
+                  String start;
+
+                  List<String> requirements =
+                          new ArrayList<>();
+
+                  List<String> items =
+                          new ArrayList<>();
+
+                  List<String> steps =
+                          new ArrayList<>();
+
+                  List<String> rewards =
+                          new ArrayList<>();
               }
           }
           EOF
 
       - name: Build APK
         run: |
+
           gradle clean assembleDebug --stacktrace
 
           echo "Checking for APK..."
+
           ls -lah app/build/outputs/apk/debug/
 
           test -f app/build/outputs/apk/debug/app-debug.apk
 
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/QuestMate.apk
+
+          cp app/build/outputs/apk/debug/app-debug.apk \
+             dist/QuestMate.apk
 
           echo "APK successfully created:"
+
           ls -lh dist/QuestMate.apk
 
       - name: Upload APK
