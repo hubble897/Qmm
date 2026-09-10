@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -40,6 +41,7 @@ jobs:
 
       - name: Create Android project
         run: |
+
           mkdir -p app/src/main/java/com/questmate/app
           mkdir -p app/src/main/res/values
 
@@ -125,12 +127,14 @@ jobs:
           cat > app/src/main/res/values/styles.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
+
               <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
                   <item name="android:fontFamily">sans</item>
                   <item name="android:colorAccent">#4CAF50</item>
                   <item name="android:navigationBarColor">#10131A</item>
                   <item name="android:statusBarColor">#10131A</item>
               </style>
+
           </resources>
           EOF
 
@@ -330,11 +334,13 @@ jobs:
                           itemSearch.getText().toString().trim();
 
                   if (query.isEmpty()) {
+
                       Toast.makeText(
                               this,
                               "Enter an OSRS item name first.",
                               Toast.LENGTH_SHORT
                       ).show();
+
                       return;
                   }
 
@@ -353,4 +359,214 @@ jobs:
                           int itemId = -1;
                           String itemName = "";
 
-                          for (int i = 0;
+                          for (int i = 0; i < mapping.length(); i++) {
+
+                              JSONObject item =
+                                      mapping.getJSONObject(i);
+
+                              String name =
+                                      item.optString("name", "");
+
+                              if (name.equalsIgnoreCase(query)) {
+
+                                  itemId =
+                                          item.optInt("id", -1);
+
+                                  itemName = name;
+
+                                  break;
+                              }
+                          }
+
+                          if (itemId == -1) {
+
+                              String search =
+                                      query.toLowerCase(Locale.US);
+
+                              for (int i = 0; i < mapping.length(); i++) {
+
+                                  JSONObject item =
+                                          mapping.getJSONObject(i);
+
+                                  String name =
+                                          item.optString("name", "");
+
+                                  if (name.toLowerCase(Locale.US)
+                                          .contains(search)) {
+
+                                      itemId =
+                                              item.optInt("id", -1);
+
+                                      itemName = name;
+
+                                      break;
+                                  }
+                              }
+                          }
+
+                          if (itemId == -1) {
+
+                              runOnUiThread(() ->
+                                      priceResult.setText(
+                                              "Item not found.\n\n" +
+                                              "Try another OSRS item name."
+                                      )
+                              );
+
+                              return;
+                          }
+
+                          String json =
+                                  getJson(
+                                          LATEST_URL +
+                                          "?id=" +
+                                          itemId
+                                  );
+
+                          JSONObject root =
+                                  new JSONObject(json);
+
+                          JSONObject data =
+                                  root.getJSONObject("data");
+
+                          JSONObject itemData =
+                                  data.getJSONObject(
+                                          String.valueOf(itemId)
+                                  );
+
+                          int high =
+                                  itemData.optInt("high", 0);
+
+                          int low =
+                                  itemData.optInt("low", 0);
+
+                          String result =
+                                  itemName +
+                                  "\n\n" +
+                                  "High: " +
+                                  formatGp(high) +
+                                  " gp\n" +
+                                  "Low: " +
+                                  formatGp(low) +
+                                  " gp";
+
+                          runOnUiThread(() ->
+                                  priceResult.setText(result)
+                          );
+
+                      } catch (Exception e) {
+
+                          runOnUiThread(() ->
+                                  priceResult.setText(
+                                          "Could not get price.\n\n" +
+                                          "Check your internet connection " +
+                                          "and try again."
+                                  )
+                          );
+                      }
+                  });
+              }
+
+              private String getJson(String urlString)
+                      throws Exception {
+
+                  HttpURLConnection connection =
+                          (HttpURLConnection)
+                                  new URL(urlString).openConnection();
+
+                  try {
+
+                      connection.setRequestMethod("GET");
+                      connection.setConnectTimeout(10000);
+                      connection.setReadTimeout(15000);
+
+                      connection.setRequestProperty(
+                              "User-Agent",
+                              "QuestMate/1.0"
+                      );
+
+                      int responseCode =
+                              connection.getResponseCode();
+
+                      if (responseCode != 200) {
+                          throw new IOException(
+                                  "HTTP " + responseCode
+                          );
+                      }
+
+                      BufferedReader reader =
+                              new BufferedReader(
+                                      new InputStreamReader(
+                                              connection.getInputStream()
+                                      )
+                              );
+
+                      StringBuilder result =
+                              new StringBuilder();
+
+                      String line;
+
+                      while ((line = reader.readLine()) != null) {
+                          result.append(line);
+                      }
+
+                      reader.close();
+
+                      return result.toString();
+
+                  } finally {
+
+                      connection.disconnect();
+                  }
+              }
+
+              private String formatGp(int amount) {
+
+                  if (amount >= 1000000) {
+
+                      return String.format(
+                              Locale.US,
+                              "%.1fM",
+                              amount / 1000000.0
+                      );
+                  }
+
+                  if (amount >= 1000) {
+
+                      return String.format(
+                              Locale.US,
+                              "%.1fK",
+                              amount / 1000.0
+                      );
+                  }
+
+                  return String.valueOf(amount);
+              }
+
+              @Override
+              protected void onDestroy() {
+
+                  super.onDestroy();
+
+                  executor.shutdownNow();
+              }
+          }
+          EOF
+
+      - name: Build APK
+        run: |
+          gradle assembleDebug --stacktrace
+
+      - name: Check APK exists
+        run: |
+          echo "Checking for APK..."
+          ls -lah app/build/outputs/apk/debug/
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          echo "APK found successfully!"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestMate-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
