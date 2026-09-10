@@ -14,7 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Set up Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -38,7 +38,8 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Create QuestMate project
+      - name: Create project
+        shell: bash
         run: |
           mkdir -p app/src/main/java/com/questmate/app
           mkdir -p app/src/main/res/values
@@ -125,7 +126,6 @@ jobs:
           cat > app/src/main/res/values/styles.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
-
               <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
                   <item name="android:fontFamily">sans</item>
                   <item name="android:colorAccent">#8AB4F8</item>
@@ -133,7 +133,6 @@ jobs:
                   <item name="android:statusBarColor">#10131A</item>
                   <item name="android:windowLightStatusBar">false</item>
               </style>
-
           </resources>
           EOF
 
@@ -146,7 +145,6 @@ jobs:
           import android.graphics.Color;
           import android.graphics.Typeface;
           import android.view.Gravity;
-          import android.view.View;
           import android.widget.Button;
           import android.widget.EditText;
           import android.widget.LinearLayout;
@@ -158,18 +156,268 @@ jobs:
           import org.json.JSONObject;
 
           import java.io.BufferedReader;
-          import java.io.IOException;
           import java.io.InputStreamReader;
           import java.net.HttpURLConnection;
           import java.net.URL;
-          import java.net.URLEncoder;
           import java.util.Locale;
           import java.util.concurrent.ExecutorService;
           import java.util.concurrent.Executors;
 
           public class MainActivity extends Activity {
 
-              private final ExecutorService executor = Executors.newSingleThreadExecutor();
+              private final ExecutorService executor =
+                      Executors.newSingleThreadExecutor();
 
               private EditText itemSearch;
-              private Text
+              private TextView resultText;
+              private Button priceButton;
+
+              private static final String MAPPING =
+                      "https://prices.runescape.wiki/api/v1/osrs/mapping";
+
+              private static final String LATEST =
+                      "https://prices.runescape.wiki/api/v1/osrs/latest";
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  createMainScreen();
+              }
+
+              private void createMainScreen() {
+
+                  ScrollView scroll = new ScrollView(this);
+
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(28, 35, 28, 35);
+                  root.setBackgroundColor(Color.rgb(16, 19, 26));
+
+                  TextView title = new TextView(this);
+                  title.setText("QuestMate");
+                  title.setTextSize(38);
+                  title.setTypeface(null, Typeface.BOLD);
+                  title.setTextColor(Color.WHITE);
+                  title.setGravity(Gravity.CENTER);
+
+                  TextView subtitle = new TextView(this);
+                  subtitle.setText("OSRS Quest & Item Companion");
+                  subtitle.setTextSize(17);
+                  subtitle.setTextColor(Color.LTGRAY);
+                  subtitle.setGravity(Gravity.CENTER);
+                  subtitle.setPadding(0, 10, 0, 30);
+
+                  Button questButton = new Button(this);
+                  questButton.setText("QUEST GUIDE");
+
+                  questButton.setOnClickListener(
+                          v -> showQuestGuide()
+                  );
+
+                  itemSearch = new EditText(this);
+                  itemSearch.setHint("Search OSRS item...");
+                  itemSearch.setSingleLine(true);
+                  itemSearch.setTextColor(Color.WHITE);
+                  itemSearch.setHintTextColor(Color.GRAY);
+
+                  priceButton = new Button(this);
+                  priceButton.setText("CHECK OSRS PRICE");
+
+                  priceButton.setOnClickListener(
+                          v -> checkPrice()
+                  );
+
+                  resultText = new TextView(this);
+                  resultText.setText("");
+                  resultText.setTextColor(Color.WHITE);
+                  resultText.setTextSize(18);
+                  resultText.setPadding(10, 25, 10, 10);
+
+                  root.addView(title);
+                  root.addView(subtitle);
+                  root.addView(questButton);
+                  root.addView(itemSearch);
+                  root.addView(priceButton);
+                  root.addView(resultText);
+
+                  scroll.addView(root);
+                  setContentView(scroll);
+              }
+
+              private void showQuestGuide() {
+
+                  String[] quests = {
+                          "Cook's Assistant",
+                          "The Restless Ghost",
+                          "Sheep Shearer",
+                          "Rune Mysteries",
+                          "Romeo & Juliet",
+                          "Waterfall Quest"
+                  };
+
+                  new AlertDialog.Builder(this)
+                          .setTitle("Quest Guide")
+                          .setItems(
+                                  quests,
+                                  (dialog, which) ->
+                                          showQuestDetails(quests[which])
+                          )
+                          .setNegativeButton("CLOSE", null)
+                          .show();
+              }
+
+              private void showQuestDetails(String quest) {
+
+                  String text;
+
+                  if (quest.equals("Cook's Assistant")) {
+                      text =
+                              "Requirements: None\n\n" +
+                              "Start: Cook in Lumbridge Castle.\n\n" +
+                              "Collect milk, an egg and flour, " +
+                              "then return them to the Cook.";
+                  } else if (quest.equals("The Restless Ghost")) {
+                      text =
+                              "Requirements: None\n\n" +
+                              "Start: Father Aereck in Lumbridge church.\n\n" +
+                              "Help the ghost in the Lumbridge graveyard.";
+                  } else if (quest.equals("Sheep Shearer")) {
+                      text =
+                              "Requirements: None\n\n" +
+                              "Start: Farmer Fred near Lumbridge.\n\n" +
+                              "Shear sheep and spin the wool.";
+                  } else if (quest.equals("Rune Mysteries")) {
+                      text =
+                              "Requirements: None\n\n" +
+                              "Start: Duke Horacio in Lumbridge Castle.\n\n" +
+                              "Investigate the mysterious rune essence.";
+                  } else if (quest.equals("Romeo & Juliet")) {
+                      text =
+                              "Requirements: None\n\n" +
+                              "Start: Romeo in Varrock.\n\n" +
+                              "Help Romeo and Juliet.";
+                  } else {
+                      text =
+                              "Requirements: None\n\n" +
+                              "Start: Almera's house near the waterfall.\n\n" +
+                              "Explore the waterfall and recover its treasure.";
+                  }
+
+                  new AlertDialog.Builder(this)
+                          .setTitle(quest)
+                          .setMessage(text)
+                          .setPositiveButton("BACK", null)
+                          .show();
+              }
+
+              private void checkPrice() {
+
+                  String query =
+                          itemSearch.getText().toString().trim();
+
+                  if (query.isEmpty()) {
+                      Toast.makeText(
+                              this,
+                              "Enter an OSRS item name first.",
+                              Toast.LENGTH_SHORT
+                      ).show();
+                      return;
+                  }
+
+                  priceButton.setEnabled(false);
+                  priceButton.setText("CHECKING...");
+                  resultText.setText(
+                          "Looking up " + query + "..."
+                  );
+
+                  executor.execute(() -> {
+
+                      try {
+
+                          String mappingJson =
+                                  getJson(MAPPING);
+
+                          JSONArray items =
+                                  new JSONArray(mappingJson);
+
+                          int id = -1;
+                          String name = "";
+
+                          for (int i = 0;
+                               i < items.length();
+                               i++) {
+
+                              JSONObject item =
+                                      items.getJSONObject(i);
+
+                              String itemName =
+                                      item.optString("name", "");
+
+                              if (itemName.equalsIgnoreCase(query)) {
+                                  id = item.getInt("id");
+                                  name = itemName;
+                                  break;
+                              }
+                          }
+
+                          if (id == -1) {
+
+                              String q =
+                                      query.toLowerCase(Locale.US);
+
+                              for (int i = 0;
+                                   i < items.length();
+                                   i++) {
+
+                                  JSONObject item =
+                                          items.getJSONObject(i);
+
+                                  String itemName =
+                                          item.optString("name", "");
+
+                                  if (itemName
+                                          .toLowerCase(Locale.US)
+                                          .contains(q)) {
+
+                                      id = item.getInt("id");
+                                      name = itemName;
+                                      break;
+                                  }
+                              }
+                          }
+
+                          if (id == -1) {
+                              showResult(
+                                      "Item not found.\n\n" +
+                                      "Try another OSRS item name."
+                              );
+                              return;
+                          }
+
+                          String priceJson =
+                                  getJson(
+                                          LATEST + "?id=" + id
+                                  );
+
+                          JSONObject root =
+                                  new JSONObject(priceJson);
+
+                          JSONObject data =
+                                  root.getJSONObject("data");
+
+                          JSONObject price =
+                                  data.getJSONObject(
+                                          String.valueOf(id)
+                                  );
+
+                          int high =
+                                  price.optInt("high", 0);
+
+                          int low =
+                                  price.optInt("low", 0);
+
+                          String result =
+                                  name + "\n\n" +
+                                  "High: " +
+                                  formatGp(high) +
+                                  " gp\n\n" +
