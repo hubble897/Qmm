@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -24,7 +23,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK
+      - name: Install Android SDK packages
         run: |
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
@@ -41,187 +40,274 @@ jobs:
 
       - name: Create QuestMate project
         run: |
-
           mkdir -p app/src/main/java/com/questmate/app
           mkdir -p app/src/main/res/values
 
           cat > settings.gradle <<'EOF'
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
 
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
 
-rootProject.name = "QuestMate"
-include(":app")
-EOF
+          rootProject.name = "QuestMate"
+          include(":app")
+          EOF
 
           cat > build.gradle <<'EOF'
-plugins {
-    id 'com.android.application' version '8.7.3' apply false
-}
-EOF
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
 
           cat > gradle.properties <<'EOF'
-android.useAndroidX=true
-android.enableJetifier=true
-org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-EOF
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          EOF
 
           cat > app/build.gradle <<'EOF'
-plugins {
-    id 'com.android.application'
-}
+          plugins {
+              id 'com.android.application'
+          }
 
-android {
-    namespace 'com.questmate.app'
-    compileSdk 35
+          android {
+              namespace 'com.questmate.app'
+              compileSdk 35
 
-    defaultConfig {
-        applicationId 'com.questmate.app'
-        minSdk 23
-        targetSdk 35
-        versionCode 1
-        versionName '1.0'
-    }
-}
-EOF
-
-          cat > app/src/main/AndroidManifest.xml <<'EOF'
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <uses-permission android:name="android.permission.INTERNET" />
-
-    <application
-        android:theme="@style/AppTheme"
-        android:label="QuestMate"
-        android:allowBackup="true"
-        android:supportsRtl="true">
-
-        <activity
-            android:name=".MainActivity"
-            android:screenOrientation="portrait"
-            android:exported="true">
-
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-
-        </activity>
-
-    </application>
-
-</manifest>
-EOF
+              defaultConfig {
+                  applicationId 'com.questmate.app'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
 
           cat > app/src/main/res/values/styles.xml <<'EOF'
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
+          <resources>
+              <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:windowLightStatusBar">false</item>
+                  <item name="android:statusBarColor">#10131A</item>
+                  <item name="android:navigationBarColor">#10131A</item>
+              </style>
+          </resources>
+          EOF
 
-    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">#10131A</item>
-        <item name="android:navigationBarColor">#10131A</item>
-    </style>
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-</resources>
-EOF
+              <uses-permission android:name="android.permission.INTERNET" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="QuestMate"
+                  android:theme="@style/AppTheme">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+
+          </manifest>
+          EOF
 
           cat > app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
-package com.questmate.app;
+          package com.questmate.app;
 
-import android.app.Activity;
-import android.app.AlertDialog;
-import android.os.Bundle;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.view.Gravity;
-import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
-import android.widget.Toast;
+          import android.app.Activity;
+          import android.app.AlertDialog;
+          import android.os.Bundle;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.view.Gravity;
+          import android.view.View;
+          import android.widget.Button;
+          import android.widget.EditText;
+          import android.widget.LinearLayout;
+          import android.widget.ScrollView;
+          import android.widget.TextView;
+          import android.widget.Toast;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
+          import org.json.JSONArray;
+          import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+          import java.io.BufferedReader;
+          import java.io.IOException;
+          import java.io.InputStreamReader;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import java.net.URLEncoder;
+          import java.util.Locale;
+          import java.util.concurrent.ExecutorService;
+          import java.util.concurrent.Executors;
 
-public class MainActivity extends Activity {
+          public class MainActivity extends Activity {
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+              private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
-    private static final String MAPPING_URL =
-            "https://prices.runescape.wiki/api/v1/osrs/mapping";
+              private TextView resultText;
+              private EditText itemSearch;
+              private Button priceButton;
 
-    private static final String LATEST_URL =
-            "https://prices.runescape.wiki/api/v1/osrs/latest";
+              private static final String MAPPING_URL =
+                      "https://prices.runescape.wiki/api/v1/osrs/mapping";
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+              private static final String LATEST_URL =
+                      "https://prices.runescape.wiki/api/v1/osrs/latest";
 
-        buildMainScreen();
-    }
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
 
-    private void buildMainScreen() {
+                  createMainScreen();
+              }
 
-        ScrollView scrollView = new ScrollView(this);
+              private void createMainScreen() {
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(32, 40, 32, 40);
-        root.setBackgroundColor(Color.rgb(16, 19, 26));
+                  ScrollView scrollView = new ScrollView(this);
+                  scrollView.setBackgroundColor(Color.rgb(16, 19, 26));
 
-        TextView title = new TextView(this);
-        title.setText("QuestMate");
-        title.setTextSize(36);
-        title.setTypeface(null, Typeface.BOLD);
-        title.setTextColor(Color.WHITE);
-        title.setGravity(Gravity.CENTER);
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(25, 35, 25, 40);
 
-        TextView subtitle = new TextView(this);
-        subtitle.setText("OSRS Quest & Item Companion");
-        subtitle.setTextSize(17);
-        subtitle.setTextColor(Color.LTGRAY);
-        subtitle.setGravity(Gravity.CENTER);
-        subtitle.setPadding(0, 10, 0, 35);
+                  TextView title = new TextView(this);
+                  title.setText("QuestMate");
+                  title.setTextSize(36);
+                  title.setTypeface(null, Typeface.BOLD);
+                  title.setTextColor(Color.WHITE);
+                  title.setGravity(Gravity.CENTER);
 
-        Button questButton = new Button(this);
-        questButton.setText("QUEST GUIDE");
-        questButton.setTextSize(17);
+                  TextView subtitle = new TextView(this);
+                  subtitle.setText("OSRS Quest & Item Companion");
+                  subtitle.setTextSize(17);
+                  subtitle.setTextColor(Color.LTGRAY);
+                  subtitle.setGravity(Gravity.CENTER);
+                  subtitle.setPadding(0, 10, 0, 30);
 
-        questButton.setOnClickListener(v -> showQuestGuide());
+                  Button questButton = new Button(this);
+                  questButton.setText("QUEST GUIDE");
+                  questButton.setTextSize(16);
 
-        EditText itemSearch = new EditText(this);
-        itemSearch.setHint("Search OSRS item...");
-        itemSearch.setSingleLine(true);
-        itemSearch.setTextColor(Color.WHITE);
-        itemSearch.setHintTextColor(Color.GRAY);
-        itemSearch.setTextSize(18);
-        itemSearch.setPadding(0, 20, 0, 20);
+                  questButton.setOnClickListener(new View.OnClickListener() {
+                      @Override
+                      public void onClick(View v) {
+                          showQuestGuide();
+                      }
+                  });
 
-        Button priceButton = new Button(this);
-       
+                  itemSearch = new EditText(this);
+                  itemSearch.setHint("Search OSRS item...");
+                  itemSearch.setSingleLine(true);
+                  itemSearch.setTextColor(Color.WHITE);
+                  itemSearch.setHintTextColor(Color.GRAY);
+                  itemSearch.setTextSize(18);
+                  itemSearch.setPadding(5, 20, 5, 20);
+
+                  priceButton = new Button(this);
+                  priceButton.setText("CHECK OSRS PRICE");
+                  priceButton.setTextSize(16);
+
+                  priceButton.setOnClickListener(new View.OnClickListener() {
+                      @Override
+                      public void onClick(View v) {
+                          checkPrice();
+                      }
+                  });
+
+                  resultText = new TextView(this);
+                  resultText.setText("");
+                  resultText.setTextColor(Color.WHITE);
+                  resultText.setTextSize(18);
+                  resultText.setPadding(10, 30, 10, 10);
+
+                  root.addView(title);
+                  root.addView(subtitle);
+                  root.addView(questButton);
+
+                  root.addView(itemSearch);
+
+                  root.addView(priceButton);
+                  root.addView(resultText);
+
+                  scrollView.addView(root);
+
+                  setContentView(scrollView);
+              }
+
+              private void showQuestGuide() {
+
+                  final String[] quests = {
+                          "Cook's Assistant",
+                          "The Restless Ghost",
+                          "Sheep Shearer",
+                          "Rune Mysteries",
+                          "Romeo & Juliet",
+                          "Waterfall Quest"
+                  };
+
+                  final String[] details = {
+                          "Start: Cook in Lumbridge Castle\n\nRequirements: None\n\nGoal: Help the Cook collect the ingredients needed to make a cake.",
+
+                          "Start: Father Aereck in the Lumbridge church\n\nRequirements: None\n\nGoal: Help Father Aereck deal with the ghost haunting the church graveyard.",
+
+                          "Start: Farmer Fred at his farm north-west of Lumbridge\n\nRequirements: None\n\nGoal: Shear 20 sheep and spin the wool.",
+
+                          "Start: Duke Horacio in Lumbridge Castle\n\nRequirements: None\n\nGoal: Investigate the mysterious rune and deliver it to the appropriate wizard.",
+
+                          "Start: Romeo in Varrock\n\nRequirements: None\n\nGoal: Help Romeo and Juliet overcome the problems keeping them apart.",
+
+                          "Start: Hudon at the Gnome Stronghold waterfall area\n\nRequirements: Combat is recommended.\n\nGoal: Explore the waterfall and recover the treasures hidden inside."
+                  };
+
+                  AlertDialog.Builder builder = new AlertDialog.Builder(this);
+                  builder.setTitle("OSRS Quest Guide");
+
+                  builder.setItems(quests, (dialog, which) -> {
+                      new AlertDialog.Builder(MainActivity.this)
+                              .setTitle(quests[which])
+                              .setMessage(details[which])
+                              .setPositiveButton("OK", null)
+                              .show();
+                  });
+
+                  builder.setNegativeButton("CLOSE", null);
+                  builder.show();
+              }
+
+              private void checkPrice() {
+
+                  final String query = itemSearch.getText().toString().trim();
+
+                  if (query.isEmpty()) {
+                      Toast.makeText(
+                              this,
+                              "Enter an OSRS item name first",
+                              Toast.LENGTH_SHORT
+                      ).show();
+                      return;
+                  }
+
+                  price
