@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -41,425 +40,317 @@ jobs:
 
       - name: Create Android project
         run: |
-
           mkdir -p app/src/main/java/com/questmate/app
           mkdir -p app/src/main/res/values
 
           cat > settings.gradle <<'EOF'
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
 
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
 
-rootProject.name = "QuestMate"
-include(":app")
-EOF
+          rootProject.name = "QuestMate"
+          include(":app")
+          EOF
 
           cat > build.gradle <<'EOF'
-plugins {
-    id 'com.android.application' version '8.7.3' apply false
-}
-EOF
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
 
           cat > gradle.properties <<'EOF'
-android.useAndroidX=true
-android.enableJetifier=true
-EOF
+          android.useAndroidX=true
+          android.enableJetifier=true
+          EOF
 
           cat > app/build.gradle <<'EOF'
-plugins {
-    id 'com.android.application'
-}
+          plugins {
+              id 'com.android.application'
+          }
 
-android {
-    namespace 'com.questmate.app'
-    compileSdk 35
+          android {
+              namespace 'com.questmate.app'
+              compileSdk 35
 
-    defaultConfig {
-        applicationId 'com.questmate.app'
-        minSdk 23
-        targetSdk 35
-        versionCode 1
-        versionName '1.0'
-    }
-}
-EOF
+              defaultConfig {
+                  applicationId 'com.questmate.app'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.INTERNET" />
 
-    <application
-        android:allowBackup="true"
-        android:label="QuestMate"
-        android:theme="@style/AppTheme">
+              <application
+                  android:allowBackup="true"
+                  android:label="QuestMate"
+                  android:theme="@style/AppTheme">
 
-        <activity
-            android:name=".MainActivity"
-            android:screenOrientation="portrait"
-            android:exported="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:screenOrientation="portrait"
+                      android:exported="true">
 
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
 
-        </activity>
+                  </activity>
 
-    </application>
+              </application>
 
-</manifest>
-EOF
+          </manifest>
+          EOF
 
           cat > app/src/main/res/values/styles.xml <<'EOF'
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-
-    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#4CAF50</item>
-        <item name="android:navigationBarColor">#10131A</item>
-        <item name="android:statusBarColor">#10131A</item>
-    </style>
-
-</resources>
-EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:colorAccent">#4CAF50</item>
+                  <item name="android:navigationBarColor">#10131A</item>
+                  <item name="android:statusBarColor">#10131A</item>
+              </style>
+          </resources>
+          EOF
 
           cat > app/src/main/java/com/questmate/app/MainActivity.java <<'EOF'
-package com.questmate.app;
-
-import android.app.Activity;
-import android.app.AlertDialog;
-import android.os.Bundle;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.view.Gravity;
-import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
-import android.widget.Toast;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
-import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
-public class MainActivity extends Activity {
-
-    private final ExecutorService executor =
-            Executors.newSingleThreadExecutor();
-
-    private EditText itemSearch;
-    private TextView priceResult;
-
-    private static final String MAPPING_URL =
-            "https://prices.runescape.wiki/api/v1/osrs/mapping";
-
-    private static final String LATEST_URL =
-            "https://prices.runescape.wiki/api/v1/osrs/latest";
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
-        createMainScreen();
-    }
-
-    private void createMainScreen() {
-
-        ScrollView scrollView = new ScrollView(this);
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(32, 45, 32, 40);
-        root.setBackgroundColor(Color.rgb(16, 19, 26));
-
-        TextView title = new TextView(this);
-        title.setText("QuestMate");
-        title.setTextSize(36);
-        title.setTypeface(null, Typeface.BOLD);
-        title.setTextColor(Color.WHITE);
-        title.setGravity(Gravity.CENTER);
-
-        TextView subtitle = new TextView(this);
-        subtitle.setText("OSRS Quest & Item Companion");
-        subtitle.setTextSize(17);
-        subtitle.setTextColor(Color.LTGRAY);
-        subtitle.setGravity(Gravity.CENTER);
-        subtitle.setPadding(0, 10, 0, 30);
-
-        Button questButton = new Button(this);
-        questButton.setText("📖 Quest Guide");
-        questButton.setTextSize(17);
-
-        questButton.setOnClickListener(v -> showQuestGuide());
-
-        TextView priceTitle = new TextView(this);
-        priceTitle.setText("OSRS Item Price Checker");
-        priceTitle.setTextSize(23);
-        priceTitle.setTypeface(null, Typeface.BOLD);
-        priceTitle.setTextColor(Color.WHITE);
-        priceTitle.setPadding(0, 35, 0, 10);
-
-        itemSearch = new EditText(this);
-        itemSearch.setHint("Enter item name");
-        itemSearch.setSingleLine(true);
-        itemSearch.setTextColor(Color.WHITE);
-        itemSearch.setHintTextColor(Color.GRAY);
-        itemSearch.setPadding(20, 15, 20, 15);
-
-        Button priceButton = new Button(this);
-        priceButton.setText("💰 Check OSRS Price");
-        priceButton.setTextSize(17);
-
-        priceButton.setOnClickListener(v -> checkPrice());
-
-        priceResult = new TextView(this);
-        priceResult.setText("");
-        priceResult.setTextSize(18);
-        priceResult.setTextColor(Color.WHITE);
-        priceResult.setPadding(10, 25, 10, 25);
-        priceResult.setGravity(Gravity.CENTER);
-
-        TextView info = new TextView(this);
-        info.setText(
-                "QuestMate\n\n" +
-                "Quest guides and OSRS item prices in one simple app.\n\n" +
-                "Price data is retrieved from the OSRS Wiki real-time prices service."
-        );
-        info.setTextSize(14);
-        info.setTextColor(Color.LTGRAY);
-        info.setPadding(10, 30, 10, 10);
-
-        root.addView(title);
-        root.addView(subtitle);
-        root.addView(questButton);
-        root.addView(priceTitle);
-        root.addView(itemSearch);
-        root.addView(priceButton);
-        root.addView(priceResult);
-        root.addView(info);
-
-        scrollView.addView(root);
-
-        setContentView(scrollView);
-    }
-
-    private void showQuestGuide() {
-
-        final String[] quests = {
-                "Cook's Assistant",
-                "The Restless Ghost",
-                "Sheep Shearer",
-                "Rune Mysteries",
-                "Romeo & Juliet",
-                "Waterfall Quest"
-        };
-
-        AlertDialog.Builder builder =
-                new AlertDialog.Builder(this);
-
-        builder.setTitle("Quest Guide");
-
-        builder.setItems(quests, (dialog, which) -> {
-
-            switch (which) {
-
-                case 0:
-                    showQuestDetails(
-                            "Cook's Assistant",
-                            "Start: Cook in Lumbridge Castle\n\n" +
-                            "Requirements: None\n\n" +
-                            "Basic objectives:\n" +
-                            "• Get an egg\n" +
-                            "• Get a bucket of milk\n" +
-                            "• Get some flour\n" +
-                            "• Return the ingredients to the Cook"
-                    );
-                    break;
-
-                case 1:
-                    showQuestDetails(
-                            "The Restless Ghost",
-                            "Start: Father Aereck in Lumbridge Church\n\n" +
-                            "Requirements: None\n\n" +
-                            "Basic objective:\n" +
-                            "Help the ghost in the Lumbridge graveyard " +
-                            "find peace."
-                    );
-                    break;
-
-                case 2:
-                    showQuestDetails(
-                            "Sheep Shearer",
-                            "Start: Farmer Fred\n\n" +
-                            "Requirements: None\n\n" +
-                            "Basic objectives:\n" +
-                            "• Shear sheep\n" +
-                            "• Collect the wool\n" +
-                            "• Spin the wool\n" +
-                            "• Return the required wool to Farmer Fred"
-                    );
-                    break;
-
-                case 3:
-                    showQuestDetails(
-                            "Rune Mysteries",
-                            "Start: Duke Horacio in Lumbridge Castle\n\n" +
-                            "Requirements: None\n\n" +
-                            "Basic objective:\n" +
-                            "Investigate the mysterious rune essence " +
-                            "and help establish access to rune essence mining."
-                    );
-                    break;
-
-                case 4:
-                    showQuestDetails(
-                            "Romeo & Juliet",
-                            "Start: Romeo in Varrock\n\n" +
-                            "Requirements: None\n\n" +
-                            "Basic objective:\n" +
-                            "Help Romeo and Juliet overcome their problems " +
-                            "and complete their story."
-                    );
-                    break;
-
-                case 5:
-                    showQuestDetails(
-                            "Waterfall Quest",
-                            "Start: Almera near the Baxtorian Falls\n\n" +
-                            "Requirements: Recommended combat preparation\n\n" +
-                            "Basic objective:\n" +
-                            "Explore the waterfall area and recover the " +
-                            "treasure hidden within the waterfall."
-                    );
-                    break;
-            }
-        });
-
-        builder.setNegativeButton("Close", null);
-
-        builder.show();
-    }
-
-    private void showQuestDetails(String title, String details) {
-
-        AlertDialog.Builder builder =
-                new AlertDialog.Builder(this);
-
-        builder.setTitle(title);
-        builder.setMessage(details);
-
-        builder.setPositiveButton("OK", null);
-
-        builder.show();
-    }
-
-    private void checkPrice() {
-
-        String query = itemSearch.getText()
-                .toString()
-                .trim();
-
-        if (query.isEmpty()) {
-
-            Toast.makeText(
-                    this,
-                    "Enter an OSRS item name first.",
-                    Toast.LENGTH_SHORT
-            ).show();
-
-            return;
-        }
-
-        priceResult.setText("Checking price...");
-
-        executor.execute(() -> {
-
-            try {
-
-                String mappingJson =
-                        getJson(MAPPING_URL);
-
-                JSONArray mapping =
-                        new JSONArray(mappingJson);
-
-                int itemId = -1;
-                String itemName = null;
-
-                String search =
-                        query.toLowerCase(Locale.US);
-
-                // First look for an exact match.
-                for (int i = 0; i < mapping.length(); i++) {
-
-                    JSONObject item =
-                            mapping.getJSONObject(i);
-
-                    String name =
-                            item.optString("name", "");
-
-                    if (name.equalsIgnoreCase(query)) {
-
-                        itemId =
-                                item.optInt("id", -1);
-
-                        itemName = name;
-
-                        break;
-                    }
-                }
-
-                // If no exact match, look for a partial match.
-                if (itemId == -1) {
-
-                    for (int i = 0; i < mapping.length(); i++) {
-
-                        JSONObject item =
-                                mapping.getJSONObject(i);
-
-                        String name =
-                                item.optString("name", "");
-
-                        if (name.toLowerCase(Locale.US)
-                                .contains(search)) {
-
-                            itemId =
-                                    item.optInt("id", -1);
-
-                            itemName = name;
-
-                            break;
-                        }
-                    }
-                }
-
-                if (itemId == -1) {
-
-                    runOnUiThread(() ->
-                           
+          package com.questmate.app;
+
+          import android.app.Activity;
+          import android.app.AlertDialog;
+          import android.os.Bundle;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.view.Gravity;
+          import android.widget.Button;
+          import android.widget.EditText;
+          import android.widget.LinearLayout;
+          import android.widget.ScrollView;
+          import android.widget.TextView;
+          import android.widget.Toast;
+
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+
+          import java.io.BufferedReader;
+          import java.io.IOException;
+          import java.io.InputStreamReader;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import java.util.Locale;
+          import java.util.concurrent.ExecutorService;
+          import java.util.concurrent.Executors;
+
+          public class MainActivity extends Activity {
+
+              private final ExecutorService executor =
+                      Executors.newSingleThreadExecutor();
+
+              private EditText itemSearch;
+              private TextView priceResult;
+
+              private static final String MAPPING_URL =
+                      "https://prices.runescape.wiki/api/v1/osrs/mapping";
+
+              private static final String LATEST_URL =
+                      "https://prices.runescape.wiki/api/v1/osrs/latest";
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  createMainScreen();
+              }
+
+              private void createMainScreen() {
+
+                  ScrollView scrollView = new ScrollView(this);
+
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(32, 45, 32, 40);
+                  root.setBackgroundColor(Color.rgb(16, 19, 26));
+
+                  TextView title = new TextView(this);
+                  title.setText("QuestMate");
+                  title.setTextSize(36);
+                  title.setTypeface(null, Typeface.BOLD);
+                  title.setTextColor(Color.WHITE);
+                  title.setGravity(Gravity.CENTER);
+
+                  TextView subtitle = new TextView(this);
+                  subtitle.setText("OSRS Quest & Item Companion");
+                  subtitle.setTextSize(17);
+                  subtitle.setTextColor(Color.LTGRAY);
+                  subtitle.setGravity(Gravity.CENTER);
+                  subtitle.setPadding(0, 10, 0, 30);
+
+                  Button questButton = new Button(this);
+                  questButton.setText("Quest Guide");
+                  questButton.setTextSize(17);
+
+                  questButton.setOnClickListener(v -> showQuestGuide());
+
+                  TextView priceTitle = new TextView(this);
+                  priceTitle.setText("OSRS Item Price Checker");
+                  priceTitle.setTextSize(23);
+                  priceTitle.setTypeface(null, Typeface.BOLD);
+                  priceTitle.setTextColor(Color.WHITE);
+                  priceTitle.setPadding(0, 35, 0, 10);
+
+                  itemSearch = new EditText(this);
+                  itemSearch.setHint("Enter OSRS item name");
+                  itemSearch.setSingleLine(true);
+                  itemSearch.setTextColor(Color.WHITE);
+                  itemSearch.setHintTextColor(Color.GRAY);
+
+                  Button priceButton = new Button(this);
+                  priceButton.setText("Check OSRS Price");
+                  priceButton.setTextSize(17);
+
+                  priceButton.setOnClickListener(v -> checkPrice());
+
+                  priceResult = new TextView(this);
+                  priceResult.setText("");
+                  priceResult.setTextSize(18);
+                  priceResult.setTextColor(Color.WHITE);
+                  priceResult.setPadding(10, 25, 10, 25);
+                  priceResult.setGravity(Gravity.CENTER);
+
+                  root.addView(title);
+                  root.addView(subtitle);
+                  root.addView(questButton);
+                  root.addView(priceTitle);
+                  root.addView(itemSearch);
+                  root.addView(priceButton);
+                  root.addView(priceResult);
+
+                  scrollView.addView(root);
+
+                  setContentView(scrollView);
+              }
+
+              private void showQuestGuide() {
+
+                  String[] quests = {
+                          "Cook's Assistant",
+                          "The Restless Ghost",
+                          "Sheep Shearer",
+                          "Rune Mysteries",
+                          "Romeo & Juliet",
+                          "Waterfall Quest"
+                  };
+
+                  new AlertDialog.Builder(this)
+                          .setTitle("Quest Guide")
+                          .setItems(quests, (dialog, which) -> {
+
+                              String title = quests[which];
+                              String details;
+
+                              switch (which) {
+
+                                  case 0:
+                                      details =
+                                              "Start: Cook in Lumbridge Castle\n\n" +
+                                              "Requirements: None\n\n" +
+                                              "Get an egg, a bucket of milk and some flour, " +
+                                              "then return them to the Cook.";
+                                      break;
+
+                                  case 1:
+                                      details =
+                                              "Start: Father Aereck in Lumbridge Church\n\n" +
+                                              "Requirements: None\n\n" +
+                                              "Help the ghost in the Lumbridge graveyard.";
+                                      break;
+
+                                  case 2:
+                                      details =
+                                              "Start: Farmer Fred\n\n" +
+                                              "Requirements: None\n\n" +
+                                              "Shear sheep, collect the wool and complete " +
+                                              "Farmer Fred's request.";
+                                      break;
+
+                                  case 3:
+                                      details =
+                                              "Start: Duke Horacio in Lumbridge Castle\n\n" +
+                                              "Requirements: None\n\n" +
+                                              "Investigate the mystery surrounding rune essence.";
+                                      break;
+
+                                  case 4:
+                                      details =
+                                              "Start: Romeo in Varrock\n\n" +
+                                              "Requirements: None\n\n" +
+                                              "Help Romeo and Juliet complete their story.";
+                                      break;
+
+                                  default:
+                                      details =
+                                              "Start: Almera near Baxtorian Falls\n\n" +
+                                              "Explore the waterfall and recover the treasure.";
+                                      break;
+                              }
+
+                              new AlertDialog.Builder(this)
+                                      .setTitle(title)
+                                      .setMessage(details)
+                                      .setPositiveButton("OK", null)
+                                      .show();
+                          })
+                          .setNegativeButton("Close", null)
+                          .show();
+              }
+
+              private void checkPrice() {
+
+                  String query =
+                          itemSearch.getText().toString().trim();
+
+                  if (query.isEmpty()) {
+                      Toast.makeText(
+                              this,
+                              "Enter an OSRS item name first.",
+                              Toast.LENGTH_SHORT
+                      ).show();
+                      return;
+                  }
+
+                  priceResult.setText("Checking price...");
+
+                  executor.execute(() -> {
+
+                      try {
+
+                          String mappingJson =
+                                  getJson(MAPPING_URL);
+
+                          JSONArray mapping =
+                                  new JSONArray(mappingJson);
+
+                          int itemId = -1;
+                          String itemName = "";
+
+                          for (int i = 0;
