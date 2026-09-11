@@ -734,4 +734,240 @@ jobs:
 
           java -jar apktool.jar b \
             work/questmate \
-     
+            -o output/QuestMate-Items-unsigned.apk
+
+          echo ""
+          echo "APK rebuilt."
+
+          ls -lh output/QuestMate-Items-unsigned.apk
+
+
+      # ============================================================
+      # 11. INSTALL ANDROID BUILD TOOLS
+      # ============================================================
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android Build Tools
+        run: |
+          yes | sdkmanager \
+            "platform-tools" \
+            "build-tools;36.0.0"
+
+
+      # ============================================================
+      # 12. ZIPALIGN
+      # ============================================================
+
+      - name: Zipalign APK
+        run: |
+          set -e
+
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+            -f \
+            -p \
+            4 \
+            output/QuestMate-Items-unsigned.apk \
+            output/QuestMate-Items-aligned.apk
+
+          echo "APK aligned."
+
+
+      # ============================================================
+      # 13. FIND EXISTING TEST SIGNING KEY
+      #
+      # This prevents later runs from creating a different signing
+      # key for the same separate package.
+      # ============================================================
+
+      - name: Find existing QuestMate Items signing key
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+
+          set -e
+
+          mkdir -p signing
+
+          curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            -o signing/artifacts.json
+
+          KEY_ARTIFACT_ID=$(jq -r '
+            [
+              .artifacts[]
+              | select(.expired == false)
+              | select(.name == "QuestMate-Items-Signing-Key")
+            ]
+            | sort_by(.created_at)
+            | reverse
+            | .[0].id // empty
+          ' signing/artifacts.json)
+
+          if [ -n "$KEY_ARTIFACT_ID" ]; then
+
+            echo "Existing signing key artifact found."
+
+            curl -fsSL \
+              -L \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts/${KEY_ARTIFACT_ID}/zip" \
+              -o signing/key.zip
+
+            mkdir -p signing/extracted
+
+            unzip -o \
+              signing/key.zip \
+              -d signing/extracted
+
+            FOUND_KEY=$(find signing/extracted \
+              -type f \
+              -name "*.keystore" \
+              | head -n 1)
+
+            if [ -z "$FOUND_KEY" ]; then
+              echo "Existing artifact did not contain a keystore."
+              exit 1
+            fi
+
+            cp "$FOUND_KEY" signing/questmate-items.keystore
+
+            echo "Existing signing key restored."
+
+          else
+
+            echo "No existing signing key found."
+            echo "Generating first test signing key."
+
+            keytool \
+              -genkeypair \
+              -v \
+              -keystore signing/questmate-items.keystore \
+              -alias questmateitems \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass questmateitems123 \
+              -keypass questmateitems123 \
+              -dname \
+              "CN=QuestMate Items, OU=QuestMate, O=QuestMate, L=Brisbane, ST=QLD, C=AU"
+
+            echo "New signing key generated."
+
+          fi
+
+
+      # ============================================================
+      # 14. SIGN
+      # ============================================================
+
+      - name: Sign QuestMate Items APK
+        run: |
+          set -e
+
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+            --ks signing/questmate-items.keystore \
+            --ks-pass pass:questmateitems123 \
+            --key-pass pass:questmateitems123 \
+            --ks-key-alias questmateitems \
+            --out output/QuestMate-Items.apk \
+            output/QuestMate-Items-aligned.apk
+
+          echo ""
+          echo "APK signed."
+
+
+      # ============================================================
+      # 15. VERIFY APK
+      # ============================================================
+
+      - name: Verify APK
+        run: |
+          set -e
+
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify \
+            --verbose \
+            output/QuestMate-Items.apk
+
+          echo ""
+          echo "APK signature verified."
+
+
+      # ============================================================
+      # 16. VERIFY PACKAGE NAME
+      # ============================================================
+
+      - name: Verify final package
+        run: |
+          set -e
+
+          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging \
+            output/QuestMate-Items.apk \
+            | head -n 5
+
+          echo ""
+          echo "Expected package:"
+          echo "com.questmate.items"
+
+
+      # ============================================================
+      # 17. UPLOAD APK
+      # ============================================================
+
+      - name: Upload QuestMate Items APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestMate-Items-Separate-App
+          path: output/QuestMate-Items.apk
+          if-no-files-found: error
+          retention-days: 30
+
+
+      # ============================================================
+      # 18. SAVE TEST SIGNING KEY FOR FUTURE BUILDS
+      #
+      # This is NOT the original QuestMate production key.
+      # It is only used so future QuestMate Items builds can update
+      # the separate test app instead of causing another signature
+      # mismatch.
+      # ============================================================
+
+      - name: Save QuestMate Items test signing key
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuestMate-Items-Signing-Key
+          path: signing/questmate-items.keystore
+          if-no-files-found: error
+          retention-days: 90
+
+
+      # ============================================================
+      # 19. FINAL INFORMATION
+      # ============================================================
+
+      - name: Build complete
+        run: |
+          echo ""
+          echo "=============================================="
+          echo "        QUESTMATE ITEMS BUILD COMPLETE"
+          echo "=============================================="
+          echo ""
+          echo "APK:"
+          ls -lh output/QuestMate-Items.apk
+          echo ""
+          echo "NEW APP PACKAGE:"
+          echo "com.questmate.items"
+          echo ""
+          echo "NEW APP NAME:"
+          echo "QuestMate Items"
+          echo ""
+          echo "This app is separate from the original QuestMate."
+          echo ""
+          echo "The original walkthrough item references remain."
+          echo "The compiled Items list has been added."
+          echo ""
+          echo "=============================================="
