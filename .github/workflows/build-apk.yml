@@ -1,4 +1,4 @@
-name: QuestMate - Add Compiled Quest Items
+name: Build QuestMate Items - Separate App
 
 on:
   workflow_dispatch:
@@ -8,33 +8,38 @@ permissions:
   actions: read
 
 jobs:
-  update-quest-items:
+  build:
     runs-on: ubuntu-latest
 
     steps:
 
-      # ------------------------------------------------------------
-      # 1. Get repository
-      # ------------------------------------------------------------
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ------------------------------------------------------------
-      # 2. Install tools
-      # ------------------------------------------------------------
-      - name: Install tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq unzip zipalign
 
-      # ------------------------------------------------------------
-      # 3. Locate the newest QuestMate APK
+      # ============================================================
+      # 2. JAVA
+      # ============================================================
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+
+      # ============================================================
+      # 3. FIND THE EXISTING WORKING QUESTMATE APK
       #
-      # First checks for an APK already in the repository.
-      # If none exists, downloads the newest non-expired APK
-      # artifact from GitHub Actions.
-      # ------------------------------------------------------------
-      - name: Locate existing QuestMate APK
+      # First checks the repository.
+      # If it is not there, finds the newest APK artifact.
+      # ============================================================
+
+      - name: Find QuestMate APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -42,156 +47,201 @@ jobs:
 
           mkdir -p input
 
-          echo "Checking repository for QuestMate.apk..."
+          echo "=========================================="
+          echo "Looking for existing QuestMate APK"
+          echo "=========================================="
+
+          # --------------------------------------------------------
+          # First choice: APK in repository
+          # --------------------------------------------------------
 
           if [ -f "QuestMate.apk" ]; then
             cp "QuestMate.apk" "input/QuestMate.apk"
             echo "Found QuestMate.apk in repository."
-            exit 0
-          fi
+          else
 
-          echo "No QuestMate.apk in repository."
-          echo "Searching previous GitHub Actions artifacts..."
+            echo "No QuestMate.apk in repository."
+            echo "Searching GitHub Actions artifacts..."
 
-          API_URL="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100"
+            curl -fsSL \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+              -o artifacts.json
 
-          curl -fsSL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "$API_URL" \
-            -o artifacts.json
+            ARTIFACT_ID=$(jq -r '
+              [
+                .artifacts[]
+                | select(.expired == false)
+                | select(
+                    (.name | ascii_downcase | contains("questmate"))
+                    and
+                    (.name | ascii_downcase | contains("apk"))
+                )
+              ]
+              | sort_by(.created_at)
+              | reverse
+              | .[0].id // empty
+            ' artifacts.json)
 
-          ARTIFACT_ID=$(jq -r '
-            [
+            ARTIFACT_NAME=$(jq -r --argjson id "${ARTIFACT_ID:-0}" '
               .artifacts[]
-              | select(.expired == false)
-              | select(
-                  (.name | ascii_downcase | contains("questmate"))
-                  or
-                  (.name | ascii_downcase | contains("apk"))
-              )
-            ]
-            | sort_by(.created_at)
-            | reverse
-            | .[0].id // empty
-          ' artifacts.json)
+              | select(.id == $id)
+              | .name // empty
+            ' artifacts.json)
 
-          ARTIFACT_NAME=$(jq -r --argjson id "${ARTIFACT_ID:-0}" '
-            .artifacts[]
-            | select(.id == $id)
-            | .name // empty
-          ' artifacts.json)
+            if [ -z "$ARTIFACT_ID" ]; then
+              echo ""
+              echo "ERROR: No QuestMate APK artifact was found."
+              echo ""
+              echo "Put the working QuestMate.apk in the repository root"
+              echo "and run this workflow again."
+              exit 1
+            fi
 
-          if [ -z "$ARTIFACT_ID" ]; then
             echo ""
-            echo "ERROR: No previous APK artifact was found."
+            echo "Using artifact:"
+            echo "$ARTIFACT_NAME"
+            echo "Artifact ID:"
+            echo "$ARTIFACT_ID"
             echo ""
-            echo "The workflow needs either:"
-            echo "  1. A previous QuestMate APK artifact, or"
-            echo "  2. QuestMate.apk placed in the repository root."
-            echo ""
-            echo "Your uploaded APK in ChatGPT cannot be directly accessed"
-            echo "by GitHub Actions."
-            exit 1
+
+            curl -fsSL \
+              -L \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" \
+              -o input/artifact.zip
+
+            mkdir -p input/extracted
+
+            unzip -o \
+              input/artifact.zip \
+              -d input/extracted
+
+            FOUND_APK=$(find input/extracted \
+              -type f \
+              -iname "*.apk" \
+              | head -n 1)
+
+            if [ -z "$FOUND_APK" ]; then
+              echo "ERROR: Artifact did not contain an APK."
+              find input/extracted -type f -print
+              exit 1
+            fi
+
+            cp "$FOUND_APK" input/QuestMate.apk
+
           fi
 
-          echo "Using artifact:"
-          echo "$ARTIFACT_NAME"
-          echo "Artifact ID: $ARTIFACT_ID"
-
-          curl -fsSL \
-            -L \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" \
-            -o input/artifact.zip
-
-          mkdir -p input/extracted
-
-          unzip -o input/artifact.zip \
-            -d input/extracted
-
-          FOUND_APK=$(find input/extracted -type f -iname "*.apk" | head -n 1)
-
-          if [ -z "$FOUND_APK" ]; then
-            echo "ERROR: The selected artifact did not contain an APK."
-            find input/extracted -type f -print
-            exit 1
-          fi
-
-          cp "$FOUND_APK" input/QuestMate.apk
-
-          echo "Found APK:"
+          echo ""
+          echo "Source APK:"
           ls -lh input/QuestMate.apk
 
-      # ------------------------------------------------------------
-      # 4. Inspect the APK
-      # ------------------------------------------------------------
-      - name: Check QuestMate APK
+
+      # ============================================================
+      # 4. INSTALL APKTOOL
+      #
+      # Apktool 3.0.3 is used to decode the manifest while leaving
+      # the existing DEX files untouched.
+      # ============================================================
+
+      - name: Install Apktool 3.0.3
         run: |
           set -e
 
-          echo "APK contents:"
-          unzip -l input/QuestMate.apk
+          curl -fsSL \
+            -o apktool.jar \
+            "https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar"
+
+          echo "Apktool downloaded."
+
+          java -jar apktool.jar --version
+
+
+      # ============================================================
+      # 5. DECODE APK
+      #
+      # --no-src:
+      #   Keeps the existing compiled Java/Dex code untouched.
+      #
+      # --no-res:
+      #   Keeps the original resource table intact.
+      #
+      # This makes the modification much safer for this APK.
+      # ============================================================
+
+      - name: Decode QuestMate
+        run: |
+          set -e
+
+          rm -rf work
+
+          mkdir -p work
+
+          java -jar apktool.jar d \
+            --no-src \
+            --no-res \
+            --force \
+            input/QuestMate.apk \
+            -o work/questmate
 
           echo ""
-          echo "Checking for quest database..."
+          echo "APK decoded."
 
-          if ! unzip -l input/QuestMate.apk | grep -q "assets/quests.json"; then
-            echo "ERROR: assets/quests.json was not found."
+          echo ""
+          echo "Decoded files:"
+          find work/questmate -maxdepth 2 -type f | sort
+
+
+      # ============================================================
+      # 6. CHECK THE QUEST DATABASE
+      # ============================================================
+
+      - name: Check quest database
+        run: |
+          set -e
+
+          if [ ! -f "work/questmate/assets/quests.json" ]; then
+            echo "ERROR:"
+            echo "assets/quests.json was not found."
             echo ""
-            echo "This workflow is designed for the current QuestMate"
-            echo "APK structure."
+            echo "Files in assets:"
+            find work/questmate/assets -maxdepth 2 -type f -print
             exit 1
           fi
 
           echo "quests.json found."
 
-      # ------------------------------------------------------------
-      # 5. Extract quests.json
-      # ------------------------------------------------------------
-      - name: Extract quest database
-        run: |
-          set -e
-
-          mkdir -p work
-
-          unzip -p \
-            input/QuestMate.apk \
-            assets/quests.json \
-            > work/quests.json
-
           python3 -m json.tool \
-            work/quests.json \
+            work/questmate/assets/quests.json \
             > /dev/null
 
-          echo "Quest database is valid JSON."
+          echo "quests.json is valid JSON."
 
-      # ------------------------------------------------------------
-      # 6. Compile item lists
+
+      # ============================================================
+      # 7. COMPILE ITEMS FOR EVERY QUEST
       #
-      # The original walkthrough is NOT removed or rewritten.
+      # Existing walkthrough steps are NOT deleted.
       #
-      # This identifies preparation/item-style lines from each
-      # walkthrough section and combines them into the quest's
-      # top-level items list.
-      # ------------------------------------------------------------
-      - name: Compile required quest items
+      # Existing top-level items are preserved when useful.
+      #
+      # Duplicate items are removed.
+      # ============================================================
+
+      - name: Compile quest item lists
         run: |
-          set -e
 
           cat > work/compile_items.py <<'PY'
           import json
           import re
 
-          INPUT = "work/quests.json"
-          OUTPUT = "work/quests_updated.json"
+          INPUT = "work/questmate/assets/quests.json"
 
           with open(INPUT, "r", encoding="utf-8") as f:
               quests = json.load(f)
 
-          # Words which strongly suggest that a line describes an
-          # item, equipment, consumable, teleport, weapon, etc.
           item_words = [
               "gear",
               "equipment",
@@ -239,9 +289,8 @@ jobs:
               "scimitar",
               "mace",
               "spear",
-              "staff",
-              "rods",
               "rod",
+              "rods",
               "rope",
               "coins",
               "coin",
@@ -252,7 +301,6 @@ jobs:
               "knife",
               "needle",
               "thread",
-              "hammer",
               "chisel",
               "tinderbox",
               "lantern",
@@ -285,8 +333,6 @@ jobs:
               "kharedst",
           ]
 
-          # Lines which are clearly instructions rather than
-          # preparation requirements.
           action_starts = [
               "talk ",
               "speak ",
@@ -333,9 +379,7 @@ jobs:
               "make your way ",
               "proceed ",
               "leave ",
-              "kill the ",
               "defeat ",
-              "defeat the ",
           ]
 
           def clean(text):
@@ -343,10 +387,9 @@ jobs:
               text = re.sub(r"\s+", " ", text)
               return text
 
-          def normal_key(text):
-              text = text.lower().strip()
+          def key(text):
+              text = clean(text).lower()
               text = re.sub(r"[.!?,;:]+$", "", text)
-              text = re.sub(r"\s+", " ", text)
               return text
 
           def is_action(text):
@@ -369,66 +412,37 @@ jobs:
 
               low = text.lower()
 
-              # Obvious preparation wording.
-              if low.startswith("any "):
-                  return True
-
-              if low.startswith("decent food"):
-                  return True
-
-              if low.startswith("melee combat gear"):
-                  return True
-
-              if low.startswith("ranged combat gear"):
-                  return True
-
-              if low.startswith("magic combat gear"):
-                  return True
-
-              if low.startswith("combat gear"):
-                  return True
-
-              if low.startswith("melee or range gear"):
-                  return True
-
-              if low.startswith("ranged or melee gear"):
-                  return True
-
-              if low.startswith("melee or magic gear"):
-                  return True
-
-              if low.startswith("magic or range gear"):
-                  return True
-
-              if low.startswith("gear to"):
-                  return True
-
-              if low.startswith("equipment to"):
-                  return True
-
-              if low.startswith("runes/equipment"):
-                  return True
-
-              # Explicit item terminology.
-              for word in item_words:
-                  if word in low:
-                      return True
-
-              # Preparation-style phrases.
-              prep_patterns = [
-                  r"^bring ",
-                  r"^have ",
-                  r"^bring at least ",
-                  r"^you will need ",
-                  r"^you'll need ",
-                  r"^needed:",
-                  r"^required:",
-                  r"^recommended:",
-                  r"^requires ",
+              obvious = [
+                  "any ",
+                  "decent food",
+                  "melee combat gear",
+                  "ranged combat gear",
+                  "magic combat gear",
+                  "combat gear",
+                  "melee or range gear",
+                  "ranged or melee gear",
+                  "melee or magic gear",
+                  "magic or range gear",
+                  "gear to",
+                  "equipment to",
+                  "runes/equipment",
+                  "bring ",
+                  "have ",
+                  "bring at least ",
+                  "you will need ",
+                  "you'll need ",
+                  "needed:",
+                  "required:",
+                  "recommended:",
+                  "requires ",
               ]
 
-              for pattern in prep_patterns:
-                  if re.search(pattern, low):
+              for phrase in obvious:
+                  if low.startswith(phrase):
+                      return True
+
+              for word in item_words:
+                  if word in low:
                       return True
 
               return False
@@ -439,12 +453,8 @@ jobs:
               if not value:
                   return
 
-              # Strip trailing punctuation for cleaner display.
               value = re.sub(r"[.!]+$", "", value).strip()
 
-              key = normal_key(value)
-
-              # Ignore generic non-item placeholders.
               ignored = {
                   "see walkthrough",
                   "see quest walkthrough",
@@ -452,38 +462,40 @@ jobs:
                   "n/a",
               }
 
-              if key in ignored:
+              if key(value) in ignored:
                   return
 
-              # Avoid duplicate entries while retaining the original
-              # wording of the first occurrence.
-              existing_keys = {normal_key(x) for x in items}
+              existing = {key(x) for x in items}
 
-              if key not in existing_keys:
+              if key(value) not in existing:
                   items.append(value)
 
           for quest in quests:
 
               compiled = []
 
-              # Preserve any genuine existing top-level items.
-              existing = quest.get("items", [])
+              # Preserve useful existing item entries.
+              existing_items = quest.get("items", [])
 
-              if isinstance(existing, list):
-                  for item in existing:
+              if isinstance(existing_items, list):
+
+                  for item in existing_items:
+
                       if isinstance(item, str):
-                          if normal_key(item) not in (
+
+                          if key(item) not in {
                               "see walkthrough",
                               "see quest walkthrough",
                               "none",
                               "n/a",
-                          ):
+                          }:
                               add_item(compiled, item)
 
-              # Walk through every walkthrough section.
+              # Scan the walkthrough.
               walkthrough = quest.get("walkthrough", [])
 
               if isinstance(walkthrough, list):
+
                   for section in walkthrough:
 
                       if not isinstance(section, dict):
@@ -504,14 +516,12 @@ jobs:
                           if looks_like_item(step):
                               add_item(compiled, step)
 
-              # If we found nothing, retain the existing placeholder
-              # rather than creating a misleading empty list.
               if not compiled:
                   compiled = ["See walkthrough"]
 
               quest["items"] = compiled
 
-          with open(OUTPUT, "w", encoding="utf-8") as f:
+          with open(INPUT, "w", encoding="utf-8") as f:
               json.dump(
                   quests,
                   f,
@@ -520,184 +530,208 @@ jobs:
               )
               f.write("\n")
 
-          print("Updated quest database.")
+          print("")
+          print("========================================")
+          print("COMPILED QUEST ITEMS")
+          print("========================================")
 
-          for quest in quests[:10]:
+          for quest in quests[:15]:
+
               print("")
               print(quest.get("title", "Unknown quest"))
-              print("Items:")
+
               for item in quest.get("items", []):
-                  print(" -", item)
+                  print("  -", item)
+
+          print("")
+          print("========================================")
           PY
 
           python3 work/compile_items.py
 
           python3 -m json.tool \
-            work/quests_updated.json \
+            work/questmate/assets/quests.json \
             > /dev/null
 
-          echo ""
-          echo "Quest database successfully updated."
 
-      # ------------------------------------------------------------
-      # 7. Show examples before rebuilding
-      # ------------------------------------------------------------
-      - name: Verify compiled items
+      # ============================================================
+      # 8. PATCH MANIFEST
+      #
+      # ORIGINAL:
+      #   com.questmate.app
+      #
+      # NEW:
+      #   com.questmate.items
+      #
+      # This makes Android treat it as a completely separate app.
+      # ============================================================
+
+      - name: Create separate QuestMate Items package
         run: |
+
           python3 - <<'PY'
-          import json
+          import re
 
-          with open("work/quests_updated.json", encoding="utf-8") as f:
-              quests = json.load(f)
+          path = "work/questmate/AndroidManifest.xml"
+
+          with open(path, "r", encoding="utf-8") as f:
+              text = f.read()
+
+          # --------------------------------------------------------
+          # Detect original package.
+          # --------------------------------------------------------
+
+          match = re.search(
+              r'<manifest\b[^>]*\bpackage="([^"]+)"',
+              text
+          )
+
+          if not match:
+              raise SystemExit(
+                  "Could not find package name in AndroidManifest.xml"
+              )
+
+          old_package = match.group(1)
+
+          print("Original package:")
+          print(old_package)
+
+          new_package = "com.questmate.items"
+
+          # --------------------------------------------------------
+          # Change ONLY the manifest package attribute.
+          #
+          # We intentionally do not rename Java classes because
+          # the existing MainActivity remains in:
+          #
+          # com.questmate.app.MainActivity
+          # --------------------------------------------------------
+
+          text = re.sub(
+              r'(<manifest\b[^>]*\bpackage=")[^"]+(")',
+              r'\g<1>' + new_package + r'\g<2>',
+              text,
+              count=1
+          )
+
+          # --------------------------------------------------------
+          # Make common package-based Android authorities unique.
+          # --------------------------------------------------------
+
+          attributes = [
+              "authorities",
+              "taskAffinity",
+              "permission",
+              "readPermission",
+              "writePermission",
+          ]
+
+          for attribute in attributes:
+
+              pattern = (
+                  r'('
+                  + re.escape(attribute)
+                  + r'=")'
+                  + re.escape(old_package)
+              )
+
+              text = re.sub(
+                  pattern,
+                  r'\g<1>' + new_package,
+                  text
+              )
+
+          # --------------------------------------------------------
+          # Give the separate app its own visible name.
+          # --------------------------------------------------------
+
+          application_pattern = (
+              r'(<application\b[^>]*\bandroid:label=")[^"]+(")'
+          )
+
+          if re.search(application_pattern, text):
+
+              text = re.sub(
+                  application_pattern,
+                  r'\g<1>QuestMate Items\g<2>',
+                  text,
+                  count=1
+              )
+
+          else:
+
+              text = text.replace(
+                  "<application",
+                  '<application android:label="QuestMate Items"',
+                  1
+              )
+
+          # --------------------------------------------------------
+          # Use a higher version code for the test app.
+          # --------------------------------------------------------
+
+          text = re.sub(
+              r'(android:versionCode=")\d+(")',
+              r'\g<1>3001\g<2>',
+              text,
+              count=1
+          )
+
+          # --------------------------------------------------------
+          # Change displayed version.
+          # --------------------------------------------------------
+
+          text = re.sub(
+              r'(android:versionName=")[^"]+(")',
+              r'\g<1>3.0-items\g<2>',
+              text,
+              count=1
+          )
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(text)
 
           print("")
-          print("===== COMPILED QUEST ITEMS =====")
-
-          for quest in quests[:20]:
-              print("")
-              print(quest.get("title", "Unknown"))
-              for item in quest.get("items", []):
-                  print("  •", item)
+          print("New application ID:")
+          print(new_package)
 
           print("")
-          print("================================")
+          print("Application label:")
+          print("QuestMate Items")
+
+          print("")
+          print("Manifest patched successfully.")
           PY
 
-      # ------------------------------------------------------------
-      # 8. Rebuild APK
-      #
-      # Everything except assets/quests.json is copied from the
-      # existing working APK.
-      # ------------------------------------------------------------
-      - name: Rebuild patched APK
+
+      # ============================================================
+      # 9. SHOW MANIFEST
+      # ============================================================
+
+      - name: Verify separate package
         run: |
           set -e
 
-          rm -rf work/apk
-          mkdir -p work/apk
+          echo ""
+          echo "===== PATCHED MANIFEST ====="
 
-          unzip -q input/QuestMate.apk -d work/apk
+          sed -n '1,120p' \
+            work/questmate/AndroidManifest.xml
 
-          cp \
-            work/quests_updated.json \
-            work/apk/assets/quests.json
+          echo ""
+          echo "============================"
 
-          # Remove old APK signatures because the APK contents changed.
-          rm -rf work/apk/META-INF
 
-          cd work/apk
+      # ============================================================
+      # 10. BUILD MODIFIED APK
+      # ============================================================
 
-          zip -q -r \
-            ../../QuestMate-unsigned.apk \
-            .
-
-          cd ../..
-
-          echo "Unsigned APK created:"
-          ls -lh QuestMate-unsigned.apk
-
-      # ------------------------------------------------------------
-      # 9. Install Android build tools
-      # ------------------------------------------------------------
-      - name: Install Android SDK build tools
-        uses: android-actions/setup-android@v3
-
-      - name: Install build tools
-        run: |
-          sdkmanager "build-tools;35.0.0"
-
-      # ------------------------------------------------------------
-      # 10. Zipalign
-      # ------------------------------------------------------------
-      - name: Zipalign APK
+      - name: Rebuild QuestMate Items APK
         run: |
           set -e
 
-          "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
-            -f -p 4 \
-            QuestMate-unsigned.apk \
-            QuestMate-aligned.apk
+          mkdir -p output
 
-          echo "APK aligned."
-
-      # ------------------------------------------------------------
-      # 11. Create signing key
-      #
-      # This creates a new signing key for this rebuilt APK.
-      # It is suitable for installing/testing the APK.
-      # ------------------------------------------------------------
-      - name: Create test signing key
-        run: |
-          set -e
-
-          keytool \
-            -genkeypair \
-            -v \
-            -keystore questmate-test.keystore \
-            -alias questmate \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass questmate123 \
-            -keypass questmate123 \
-            -dname "CN=QuestMate, OU=QuestMate, O=QuestMate, L=Brisbane, ST=QLD, C=AU"
-
-          echo "Signing key created."
-
-      # ------------------------------------------------------------
-      # 12. Sign APK
-      # ------------------------------------------------------------
-      - name: Sign APK
-        run: |
-          set -e
-
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
-            --ks questmate-test.keystore \
-            --ks-pass pass:questmate123 \
-            --key-pass pass:questmate123 \
-            --ks-key-alias questmate \
-            --out QuestMate-Items-Updated.apk \
-            QuestMate-aligned.apk
-
-          echo "Signed APK created."
-
-      # ------------------------------------------------------------
-      # 13. Verify APK signature
-      # ------------------------------------------------------------
-      - name: Verify signed APK
-        run: |
-          set -e
-
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
-            --verbose \
-            QuestMate-Items-Updated.apk
-
-          echo ""
-          echo "APK signature verified."
-
-      # ------------------------------------------------------------
-      # 14. Final APK information
-      # ------------------------------------------------------------
-      - name: Show final APK
-        run: |
-          echo ""
-          echo "=========================================="
-          echo "        QUESTMATE BUILD COMPLETE"
-          echo "=========================================="
-          echo ""
-          ls -lh QuestMate-Items-Updated.apk
-          echo ""
-          echo "The compiled Items section has been added."
-          echo "The original walkthrough steps were preserved."
-          echo ""
-
-      # ------------------------------------------------------------
-      # 15. Upload final APK artifact
-      # ------------------------------------------------------------
-      - name: Upload QuestMate APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: QuestMate-Items-Updated
-          path: QuestMate-Items-Updated.apk
-          if-no-files-found: error
-          retention-days: 30
+          java -jar apktool.jar b \
+            work/questmate \
+     
