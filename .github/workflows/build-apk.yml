@@ -22,7 +22,7 @@ jobs:
 
 
       # ============================================================
-      # 2. JAVA
+      # 2. JAVA 17
       # ============================================================
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -37,7 +37,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK components
+      - name: Install Android SDK
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools"
@@ -55,14 +55,15 @@ jobs:
 
 
       # ============================================================
-      # 5. FIND THE ORIGINAL QUESTMATE APK
+      # 5. FIND SOURCE QUESTMATE APK
       #
-      # Preferred:
-      #   QuestMate.apk in the repository root
+      # First looks for QuestMate.apk in the repository.
       #
-      # Fallback:
-      #   Latest non-expired GitHub Actions artifact containing
-      #   both "questmate" and "apk" in its name.
+      # If it is not there, it searches previous GitHub Actions
+      # artifacts for a QuestMate APK.
+      #
+      # IMPORTANT:
+      # No Python heredoc is used here.
       # ============================================================
       - name: Locate QuestMate source APK
         env:
@@ -73,62 +74,53 @@ jobs:
           mkdir -p source_apk
 
           if [ -f "QuestMate.apk" ]; then
-            echo "Found QuestMate.apk in repository root."
-            cp "QuestMate.apk" "source_apk/QuestMate.apk"
-          else
-            echo "QuestMate.apk not found in repository root."
-            echo "Searching previous GitHub Actions artifacts..."
 
-            API_URL="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100"
+            echo "========================================"
+            echo "Found QuestMate.apk in repository"
+            echo "========================================"
+
+            cp "QuestMate.apk" "source_apk/QuestMate.apk"
+
+          else
+
+            echo "QuestMate.apk not found in repository."
+            echo "Searching GitHub Actions artifacts..."
 
             curl -fsSL \
               -H "Authorization: Bearer ${GH_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
-              "$API_URL" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
               -o artifacts.json
 
-            python3 <<'PY'
-            import json
-            import sys
+            ARTIFACT_ID="$(jq -r '
+              [
+                .artifacts[]
+                | select(.expired == false)
+                | select((.name | ascii_downcase | contains("questmate")))
+                | select((.name | ascii_downcase | contains("apk")))
+              ]
+              | sort_by(.created_at)
+              | reverse
+              | .[0].id // empty
+            ' artifacts.json)"
 
-            with open("artifacts.json", "r", encoding="utf-8") as f:
-                data = json.load(f)
+            if [ -z "$ARTIFACT_ID" ]; then
 
-            candidates = []
+              echo ""
+              echo "========================================"
+              echo "ERROR: QuestMate APK not found"
+              echo "========================================"
+              echo ""
+              echo "Please put QuestMate.apk in the root"
+              echo "of your GitHub repository and run"
+              echo "this workflow again."
+              echo ""
 
-            for artifact in data.get("artifacts", []):
-                name = artifact.get("name", "").lower()
-                expired = artifact.get("expired", False)
+              exit 1
+            fi
 
-                if not expired and "questmate" in name and "apk" in name:
-                    candidates.append(artifact)
-
-            candidates.sort(
-                key=lambda x: x.get("created_at", ""),
-                reverse=True
-            )
-
-            if not candidates:
-                print("")
-                print("ERROR: No QuestMate APK was found.")
-                print("")
-                print("Put the original QuestMate.apk in the repository root")
-                print("and run this workflow again.")
-                sys.exit(1)
-
-            selected = candidates[0]
-
-            print("Selected artifact:")
-            print(selected.get("name"))
-            print(selected.get("id"))
-
-            with open("selected_artifact.txt", "w", encoding="utf-8") as f:
-                f.write(str(selected["id"]))
-            PY
-
-            ARTIFACT_ID="$(cat selected_artifact.txt)"
-
-            echo "Downloading artifact ${ARTIFACT_ID}..."
+            echo "Found QuestMate artifact:"
+            echo "$ARTIFACT_ID"
 
             curl -fsSL \
               -L \
@@ -138,7 +130,9 @@ jobs:
               -o source_artifact.zip
 
             mkdir -p source_extract
-            unzip -o source_artifact.zip -d source_extract
+
+            unzip -o source_artifact.zip \
+              -d source_extract
 
             FOUND_APK="$(find source_extract -type f -iname '*.apk' | head -n 1)"
 
@@ -149,8 +143,6 @@ jobs:
 
             cp "$FOUND_APK" "source_apk/QuestMate.apk"
 
-            echo "Found source APK:"
-            ls -lh source_apk/QuestMate.apk
           fi
 
           echo ""
@@ -167,7 +159,9 @@ jobs:
 
           mkdir -p app/src/main/assets
 
-          unzip -p source_apk/QuestMate.apk assets/quests.json \
+          unzip -p \
+            source_apk/QuestMate.apk \
+            assets/quests.json \
             > app/src/main/assets/quests.json
 
           if [ ! -s app/src/main/assets/quests.json ]; then
@@ -175,32 +169,22 @@ jobs:
             exit 1
           fi
 
-          python3 <<'PY'
-          import json
+          echo ""
+          echo "Quest database extracted successfully."
 
-          path = "app/src/main/assets/quests.json"
+          echo "Checking JSON..."
 
-          with open(path, "r", encoding="utf-8") as f:
-              quests = json.load(f)
+          jq empty app/src/main/assets/quests.json
 
-          if not isinstance(quests, list):
-              raise SystemExit("ERROR: quests.json is not an array")
+          echo "JSON is valid."
 
-          total_steps = 0
+          echo ""
+          echo "Quest records:"
+          jq 'length' app/src/main/assets/quests.json
 
-          for quest in quests:
-              walkthrough = quest.get("walkthrough", [])
-
-              if isinstance(walkthrough, list):
-                  for section in walkthrough:
-                      if isinstance(section, dict):
-                          steps = section.get("steps", [])
-                          if isinstance(steps, list):
-                              total_steps += len(steps)
-
-          print(f"Quest records: {len(quests)}")
-          print(f"Walkthrough steps: {total_steps}")
-          PY
+          echo ""
+          echo "Database size:"
+          wc -c app/src/main/assets/quests.json
 
 
       # ============================================================
@@ -212,6 +196,7 @@ jobs:
 
           mkdir -p app/src/main/java/com/questmate/complete
           mkdir -p app/src/main/res/values
+
 
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -231,6 +216,7 @@ jobs:
           }
 
           rootProject.name = "QuestMateComplete"
+
           include(":app")
           EOF
 
@@ -256,13 +242,18 @@ jobs:
 
           android {
               namespace 'com.questmate.complete'
+
               compileSdk 35
 
               defaultConfig {
                   applicationId 'com.questmate.complete'
+
                   minSdk 23
+
                   targetSdk 35
+
                   versionCode 1
+
                   versionName '1.0'
               }
 
@@ -288,31 +279,55 @@ jobs:
 
           cat > app/src/main/res/values/colors.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
+
           <resources>
+
               <color name="background">#101318</color>
+
               <color name="surface">#1A1F27</color>
+
               <color name="surface2">#232A34</color>
+
               <color name="text">#FFFFFF</color>
+
               <color name="secondary_text">#B9C0CA</color>
+
               <color name="accent">#7CB7FF</color>
+
               <color name="item_background">#29351F</color>
+
               <color name="item_text">#D7F5A8</color>
+
           </resources>
           EOF
 
 
           cat > app/src/main/res/values/themes.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
+
           <resources>
 
-              <style name="AppTheme"
+              <style
+                  name="AppTheme"
                   parent="android:style/Theme.Material.NoActionBar">
 
                   <item name="android:fontFamily">sans</item>
-                  <item name="android:windowLightStatusBar">false</item>
-                  <item name="android:statusBarColor">#0B0E12</item>
-                  <item name="android:navigationBarColor">#0B0E12</item>
-                  <item name="android:colorAccent">#7CB7FF</item>
+
+                  <item name="android:windowLightStatusBar">
+                      false
+                  </item>
+
+                  <item name="android:statusBarColor">
+                      #0B0E12
+                  </item>
+
+                  <item name="android:navigationBarColor">
+                      #0B0E12
+                  </item>
+
+                  <item name="android:colorAccent">
+                      #7CB7FF
+                  </item>
 
               </style>
 
@@ -323,7 +338,8 @@ jobs:
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
 
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <manifest
+              xmlns:android="http://schemas.android.com/apk/res/android">
 
               <application
                   android:allowBackup="true"
@@ -337,8 +353,13 @@ jobs:
                       android:exported="true">
 
                       <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
+
+                          <action
+                              android:name="android.intent.action.MAIN" />
+
+                          <category
+                              android:name="android.intent.category.LAUNCHER" />
+
                       </intent-filter>
 
                   </activity>
@@ -350,14 +371,10 @@ jobs:
 
 
       # ============================================================
-      # 8. CREATE MAIN ACTIVITY
+      # 8. CREATE MAIN JAVA APPLICATION
       #
-      # IMPORTANT:
-      # This version deliberately uses optJSONObject/optJSONArray
-      # instead of unchecked getJSONObject calls.
-      #
-      # That fixes the JSONException compilation error from the
-      # previous workflow.
+      # This version uses optJSONObject/optJSONArray throughout
+      # so JSONException compilation errors are avoided.
       # ============================================================
       - name: Create QuestMate Java application
         run: |
@@ -383,7 +400,6 @@ jobs:
           import android.widget.Toast;
 
           import org.json.JSONArray;
-          import org.json.JSONException;
           import org.json.JSONObject;
 
           import java.io.BufferedReader;
@@ -394,56 +410,114 @@ jobs:
           import java.util.Locale;
           import java.util.Set;
 
+
           public class MainActivity extends Activity {
 
-              private final ArrayList<JSONObject> quests = new ArrayList<>();
-              private final ArrayList<String> questTitles = new ArrayList<>();
+              private final ArrayList<JSONObject> quests =
+                      new ArrayList<>();
+
+              private final ArrayList<String> questTitles =
+                      new ArrayList<>();
 
               private LinearLayout root;
+
               private EditText searchBox;
 
+
+              // ======================================================
+              // DP
+              // ======================================================
               private int dp(float value) {
-                  return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+
+                  return (int)(
+                          value *
+                          getResources()
+                              .getDisplayMetrics()
+                              .density
+                          + 0.5f
+                  );
               }
 
-              private TextView text(String value, float size, int color) {
-                  TextView t = new TextView(this);
+
+              // ======================================================
+              // TEXT
+              // ======================================================
+              private TextView text(
+                      String value,
+                      float size,
+                      int color) {
+
+                  TextView t =
+                          new TextView(this);
+
                   t.setText(value);
+
                   t.setTextSize(size);
+
                   t.setTextColor(color);
-                  t.setPadding(dp(12), dp(8), dp(12), dp(8));
+
+                  t.setPadding(
+                          dp(12),
+                          dp(8),
+                          dp(12),
+                          dp(8)
+                  );
+
                   return t;
               }
 
+
+              // ======================================================
+              // BUTTON
+              // ======================================================
               private Button button(String value) {
-                  Button b = new Button(this);
+
+                  Button b =
+                          new Button(this);
+
                   b.setText(value);
+
                   b.setTextColor(Color.WHITE);
+
                   b.setAllCaps(false);
+
                   return b;
               }
 
+
+              // ======================================================
+              // CREATE
+              // ======================================================
               @Override
-              protected void onCreate(Bundle savedInstanceState) {
+              protected void onCreate(
+                      Bundle savedInstanceState) {
+
                   super.onCreate(savedInstanceState);
 
-                  getWindow().setStatusBarColor(Color.rgb(11, 14, 18));
-                  getWindow().setNavigationBarColor(Color.rgb(11, 14, 18));
+                  getWindow().setStatusBarColor(
+                          Color.rgb(11, 14, 18)
+                  );
+
+                  getWindow().setNavigationBarColor(
+                          Color.rgb(11, 14, 18)
+                  );
 
                   loadQuests();
+
                   showQuestList();
               }
 
 
               // ======================================================
-              // LOAD DATABASE
+              // LOAD QUEST DATABASE
               // ======================================================
               private void loadQuests() {
 
                   try {
 
                       InputStream input =
-                              getAssets().open("quests.json");
+                              getAssets()
+                                  .open("quests.json");
 
                       BufferedReader reader =
                               new BufferedReader(
@@ -458,16 +532,24 @@ jobs:
 
                       String line;
 
-                      while ((line = reader.readLine()) != null) {
+                      while (
+                              (line = reader.readLine())
+                                      != null) {
+
                           jsonText.append(line);
                       }
 
                       reader.close();
 
                       JSONArray array =
-                              new JSONArray(jsonText.toString());
+                              new JSONArray(
+                                      jsonText.toString()
+                              );
 
-                      for (int i = 0; i < array.length(); i++) {
+                      for (
+                              int i = 0;
+                              i < array.length();
+                              i++) {
 
                           JSONObject quest =
                                   array.optJSONObject(i);
@@ -478,13 +560,12 @@ jobs:
 
                           quests.add(quest);
 
-                          String title =
+                          questTitles.add(
                                   quest.optString(
                                           "title",
                                           "Unknown Quest"
-                                  );
-
-                          questTitles.add(title);
+                                  )
+                          );
                       }
 
                   } catch (Exception e) {
@@ -503,9 +584,17 @@ jobs:
               // ======================================================
               private void showQuestList() {
 
-                  root = new LinearLayout(this);
-                  root.setOrientation(LinearLayout.VERTICAL);
-                  root.setBackgroundColor(Color.rgb(16, 19, 24));
+                  root =
+                          new LinearLayout(this);
+
+                  root.setOrientation(
+                          LinearLayout.VERTICAL
+                  );
+
+                  root.setBackgroundColor(
+                          Color.rgb(16, 19, 24)
+                  );
+
 
                   TextView header =
                           text(
@@ -534,7 +623,11 @@ jobs:
                                   quests.size()
                                           + " quests • Complete walkthroughs",
                                   14,
-                                  Color.rgb(185, 192, 202)
+                                  Color.rgb(
+                                          185,
+                                          192,
+                                          202
+                                  )
                           );
 
                   root.addView(subtitle);
@@ -543,12 +636,24 @@ jobs:
                   searchBox =
                           new EditText(this);
 
-                  searchBox.setHint("Search quests...");
-                  searchBox.setHintTextColor(
-                          Color.rgb(150, 158, 170)
+                  searchBox.setHint(
+                          "Search quests..."
                   );
-                  searchBox.setTextColor(Color.WHITE);
+
+                  searchBox.setHintTextColor(
+                          Color.rgb(
+                                  150,
+                                  158,
+                                  170
+                          )
+                  );
+
+                  searchBox.setTextColor(
+                          Color.WHITE
+                  );
+
                   searchBox.setSingleLine(true);
+
                   searchBox.setPadding(
                           dp(14),
                           dp(4),
@@ -585,26 +690,33 @@ jobs:
                   ArrayAdapter<String> adapter =
                           new ArrayAdapter<String>(
                                   this,
-                                  android.R.layout.simple_list_item_1,
-                                  new ArrayList<>(questTitles)
+                                  android.R.layout
+                                          .simple_list_item_1,
+                                  new ArrayList<>(
+                                          questTitles
+                                  )
                           ) {
 
                               @Override
                               public View getView(
                                       int position,
                                       View convertView,
-                                      ViewGroup parent
-                              ) {
+                                      ViewGroup parent) {
 
                                   TextView v =
-                                          (TextView) super.getView(
+                                          (TextView)
+                                          super.getView(
                                                   position,
                                                   convertView,
                                                   parent
                                           );
 
-                                  v.setTextColor(Color.WHITE);
+                                  v.setTextColor(
+                                          Color.WHITE
+                                  );
+
                                   v.setTextSize(17);
+
                                   v.setPadding(
                                           dp(16),
                                           dp(15),
@@ -624,16 +736,26 @@ jobs:
                           (parent, view, position, id) -> {
 
                               String selected =
-                                      adapter.getItem(position);
+                                      adapter.getItem(
+                                              position
+                                      );
 
-                              for (JSONObject quest : quests) {
+                              if (selected == null) {
+                                  return;
+                              }
 
-                                  if (quest.optString(
-                                          "title",
-                                          ""
-                                  ).equals(selected)) {
+                              for (
+                                      JSONObject quest :
+                                      quests) {
+
+                                  if (
+                                      quest.optString(
+                                              "title",
+                                              ""
+                                      ).equals(selected)) {
 
                                       showQuest(quest);
+
                                       break;
                                   }
                               }
@@ -649,8 +771,7 @@ jobs:
                                       CharSequence s,
                                       int start,
                                       int count,
-                                      int after
-                              ) {
+                                      int after) {
                               }
 
                               @Override
@@ -658,39 +779,47 @@ jobs:
                                       CharSequence s,
                                       int start,
                                       int before,
-                                      int count
-                              ) {
+                                      int count) {
 
                                   String query =
                                           s.toString()
-                                                  .toLowerCase(
-                                                          Locale.ROOT
-                                                  );
+                                              .toLowerCase(
+                                                      Locale.ROOT
+                                              );
 
-                                  ArrayList<String> filtered =
+                                  ArrayList<String>
+                                          filtered =
                                           new ArrayList<>();
 
-                                  for (String title : questTitles) {
+                                  for (
+                                          String title :
+                                          questTitles) {
 
-                                      if (title
+                                      if (
+                                          title
                                               .toLowerCase(
                                                       Locale.ROOT
                                               )
                                               .contains(query)) {
 
-                                          filtered.add(title);
+                                          filtered.add(
+                                                  title
+                                          );
                                       }
                                   }
 
                                   adapter.clear();
-                                  adapter.addAll(filtered);
+
+                                  adapter.addAll(
+                                          filtered
+                                  );
+
                                   adapter.notifyDataSetChanged();
                               }
 
                               @Override
                               public void afterTextChanged(
-                                      android.text.Editable s
-                              ) {
+                                      android.text.Editable s) {
                               }
                           }
                   );
@@ -703,7 +832,8 @@ jobs:
               // ======================================================
               // QUEST DETAIL
               // ======================================================
-              private void showQuest(JSONObject quest) {
+              private void showQuest(
+                      JSONObject quest) {
 
                   LinearLayout page =
                           new LinearLayout(this);
@@ -731,6 +861,7 @@ jobs:
                           dp(5)
                   );
 
+
                   Button back =
                           button("← Quests");
 
@@ -756,6 +887,7 @@ jobs:
                           Typeface.BOLD
                   );
 
+
                   topBar.addView(
                           title,
                           new LinearLayout.LayoutParams(
@@ -764,6 +896,7 @@ jobs:
                                   1
                           )
                   );
+
 
                   page.addView(topBar);
 
@@ -790,15 +923,17 @@ jobs:
 
 
                   // ==================================================
-                  // QUEST INFORMATION
+                  // INFORMATION
                   // ==================================================
                   addSectionTitle(
                           content,
                           "QUEST INFORMATION"
                   );
 
+
                   StringBuilder info =
                           new StringBuilder();
+
 
                   String difficulty =
                           quest.optString(
@@ -830,7 +965,9 @@ jobs:
                                   ""
                           );
 
+
                   if (!difficulty.isEmpty()) {
+
                       info.append(
                               "Difficulty: "
                                       + difficulty
@@ -838,7 +975,9 @@ jobs:
                       );
                   }
 
+
                   if (!length.isEmpty()) {
+
                       info.append(
                               "Length: "
                                       + length
@@ -846,7 +985,9 @@ jobs:
                       );
                   }
 
+
                   if (!members.isEmpty()) {
+
                       info.append(
                               "Members: "
                                       + members
@@ -854,7 +995,9 @@ jobs:
                       );
                   }
 
+
                   if (!qp.isEmpty()) {
+
                       info.append(
                               "Quest Points: "
                                       + qp
@@ -862,7 +1005,9 @@ jobs:
                       );
                   }
 
+
                   if (!start.isEmpty()) {
+
                       info.append(
                               "Start: "
                                       + start
@@ -870,19 +1015,25 @@ jobs:
                       );
                   }
 
+
                   if (info.length() > 0) {
+
                       content.addView(
                               text(
                                       info.toString().trim(),
                                       15,
-                                      Color.rgb(210, 215, 222)
+                                      Color.rgb(
+                                              210,
+                                              215,
+                                              222
+                                      )
                               )
                       );
                   }
 
 
                   // ==================================================
-                  // ITEMS NEEDED
+                  // ITEMS
                   // ==================================================
                   addSectionTitle(
                           content,
@@ -896,28 +1047,41 @@ jobs:
 
                   if (items.isEmpty()) {
 
-                      TextView none =
+                      content.addView(
                               text(
                                       "No specific items were identified in the quest database. Check the walkthrough below for requirements.",
                                       14,
-                                      Color.rgb(185, 192, 202)
-                              );
-
-                      content.addView(none);
+                                      Color.rgb(
+                                              185,
+                                              192,
+                                              202
+                                      )
+                              )
+                      );
 
                   } else {
 
-                      for (String item : items) {
+                      for (
+                              String item :
+                              items) {
 
                           TextView itemView =
                                   text(
                                           "• " + item,
                                           15,
-                                          Color.rgb(215, 245, 168)
+                                          Color.rgb(
+                                                  215,
+                                                  245,
+                                                  168
+                                          )
                                   );
 
                           itemView.setBackgroundColor(
-                                  Color.rgb(41, 53, 31)
+                                  Color.rgb(
+                                          41,
+                                          53,
+                                          31
+                                  )
                           );
 
                           itemView.setPadding(
@@ -926,6 +1090,7 @@ jobs:
                                   dp(12),
                                   dp(10)
                           );
+
 
                           LinearLayout.LayoutParams lp =
                                   new LinearLayout.LayoutParams(
@@ -939,6 +1104,7 @@ jobs:
                                   dp(4),
                                   dp(2)
                           );
+
 
                           content.addView(
                                   itemView,
@@ -956,8 +1122,11 @@ jobs:
                                   "requirements"
                           );
 
-                  if (requirements != null
-                          && requirements.length() > 0) {
+
+                  if (
+                          requirements != null
+                                  &&
+                          requirements.length() > 0) {
 
                       addSectionTitle(
                               content,
@@ -980,6 +1149,7 @@ jobs:
                                   ""
                           );
 
+
                   if (!combat.isEmpty()) {
 
                       addSectionTitle(
@@ -991,7 +1161,11 @@ jobs:
                               text(
                                       combat,
                                       15,
-                                      Color.rgb(220, 220, 220)
+                                      Color.rgb(
+                                              220,
+                                              220,
+                                              220
+                                      )
                               )
                       );
                   }
@@ -1005,8 +1179,11 @@ jobs:
                                   "rewards"
                           );
 
-                  if (rewards != null
-                          && rewards.length() > 0) {
+
+                  if (
+                          rewards != null
+                                  &&
+                          rewards.length() > 0) {
 
                       addSectionTitle(
                               content,
@@ -1035,8 +1212,10 @@ jobs:
                           );
 
 
-                  if (walkthrough == null
-                          || walkthrough.length() == 0) {
+                  if (
+                          walkthrough == null
+                                  ||
+                          walkthrough.length() == 0) {
 
                       content.addView(
                               text(
@@ -1050,18 +1229,24 @@ jobs:
 
                       int globalStep = 1;
 
-                      for (int sectionIndex = 0;
-                           sectionIndex < walkthrough.length();
-                           sectionIndex++) {
+
+                      for (
+                              int sectionIndex = 0;
+                              sectionIndex <
+                                      walkthrough.length();
+                              sectionIndex++) {
 
                           JSONObject section =
-                                  walkthrough.optJSONObject(
-                                          sectionIndex
-                                  );
+                                  walkthrough
+                                      .optJSONObject(
+                                              sectionIndex
+                                      );
+
 
                           if (section == null) {
                               continue;
                           }
+
 
                           String sectionTitle =
                                   section.optString(
@@ -1069,7 +1254,9 @@ jobs:
                                           ""
                                   );
 
-                          if (!sectionTitle.isEmpty()) {
+
+                          if (
+                                  !sectionTitle.isEmpty()) {
 
                               TextView sectionView =
                                       text(
@@ -1082,10 +1269,12 @@ jobs:
                                               )
                                       );
 
+
                               sectionView.setTypeface(
                                       Typeface.DEFAULT,
                                       Typeface.BOLD
                               );
+
 
                               sectionView.setPadding(
                                       dp(8),
@@ -1093,6 +1282,7 @@ jobs:
                                       dp(8),
                                       dp(8)
                               );
+
 
                               content.addView(
                                       sectionView
@@ -1105,20 +1295,24 @@ jobs:
                                           "steps"
                                   );
 
+
                           if (steps == null) {
                               continue;
                           }
 
 
-                          for (int stepIndex = 0;
-                               stepIndex < steps.length();
-                               stepIndex++) {
+                          for (
+                                  int stepIndex = 0;
+                                  stepIndex <
+                                          steps.length();
+                                  stepIndex++) {
 
                               String step =
                                       steps.optString(
                                               stepIndex,
                                               ""
                                       ).trim();
+
 
                               if (step.isEmpty()) {
                                   continue;
@@ -1128,7 +1322,8 @@ jobs:
                               // --------------------------------------
                               // ITEM LABEL
                               // --------------------------------------
-                              if (isItemStep(step)) {
+                              if (
+                                      isItemStep(step)) {
 
                                   TextView itemLabel =
                                           text(
@@ -1141,10 +1336,12 @@ jobs:
                                                   )
                                           );
 
+
                                   itemLabel.setTypeface(
                                           Typeface.DEFAULT,
                                           Typeface.BOLD
                                   );
+
 
                                   itemLabel.setBackgroundColor(
                                           Color.rgb(
@@ -1154,6 +1351,7 @@ jobs:
                                           )
                                   );
 
+
                                   itemLabel.setPadding(
                                           dp(10),
                                           dp(5),
@@ -1161,11 +1359,14 @@ jobs:
                                           dp(5)
                                   );
 
-                                  LinearLayout.LayoutParams labelLp =
+
+                                  LinearLayout.LayoutParams
+                                          labelLp =
                                           new LinearLayout.LayoutParams(
                                                   -2,
                                                   -2
                                           );
+
 
                                   labelLp.setMargins(
                                           dp(4),
@@ -1173,6 +1374,7 @@ jobs:
                                           dp(4),
                                           dp(0)
                                   );
+
 
                                   content.addView(
                                           itemLabel,
@@ -1197,6 +1399,7 @@ jobs:
                                               )
                                       );
 
+
                               stepView.setPadding(
                                       dp(10),
                                       dp(10),
@@ -1204,11 +1407,14 @@ jobs:
                                       dp(10)
                               );
 
-                              LinearLayout.LayoutParams stepLp =
+
+                              LinearLayout.LayoutParams
+                                      stepLp =
                                       new LinearLayout.LayoutParams(
                                               -1,
                                               -2
                                       );
+
 
                               stepLp.setMargins(
                                       dp(2),
@@ -1217,10 +1423,12 @@ jobs:
                                       dp(1)
                               );
 
+
                               content.addView(
                                       stepView,
                                       stepLp
                               );
+
 
                               globalStep++;
                           }
@@ -1228,21 +1436,31 @@ jobs:
                   }
 
 
+                  // ==================================================
+                  // COMPLETE
+                  // ==================================================
                   TextView complete =
                           text(
                                   "✓ CONGRATULATIONS — QUEST COMPLETE",
                                   18,
-                                  Color.rgb(215, 245, 168)
+                                  Color.rgb(
+                                          215,
+                                          245,
+                                          168
+                                  )
                           );
+
 
                   complete.setTypeface(
                           Typeface.DEFAULT,
                           Typeface.BOLD
                   );
 
+
                   complete.setGravity(
                           Gravity.CENTER
                   );
+
 
                   complete.setPadding(
                           dp(10),
@@ -1251,10 +1469,14 @@ jobs:
                           dp(22)
                   );
 
-                  content.addView(complete);
+
+                  content.addView(
+                          complete
+                  );
 
 
                   scroll.addView(content);
+
 
                   page.addView(
                           scroll,
@@ -1275,8 +1497,7 @@ jobs:
               // ======================================================
               private void addSectionTitle(
                       LinearLayout parent,
-                      String title
-              ) {
+                      String title) {
 
                   TextView header =
                           text(
@@ -1289,10 +1510,12 @@ jobs:
                                   )
                           );
 
+
                   header.setTypeface(
                           Typeface.DEFAULT,
                           Typeface.BOLD
                   );
+
 
                   header.setPadding(
                           dp(8),
@@ -1300,6 +1523,7 @@ jobs:
                           dp(8),
                           dp(8)
                   );
+
 
                   parent.addView(header);
               }
@@ -1310,12 +1534,12 @@ jobs:
               // ======================================================
               private void addArray(
                       LinearLayout parent,
-                      JSONArray array
-              ) {
+                      JSONArray array) {
 
-                  for (int i = 0;
-                       i < array.length();
-                       i++) {
+                  for (
+                          int i = 0;
+                          i < array.length();
+                          i++) {
 
                       String value =
                               array.optString(
@@ -1323,21 +1547,29 @@ jobs:
                                       ""
                               ).trim();
 
+
                       if (value.isEmpty()) {
                           continue;
                       }
 
-                      if (value.equalsIgnoreCase(
-                              "See walkthrough"
-                      )) {
+
+                      if (
+                              value.equalsIgnoreCase(
+                                      "See walkthrough"
+                              )) {
+
                           continue;
                       }
 
-                      if (value.equalsIgnoreCase(
-                              "See quest walkthrough"
-                      )) {
+
+                      if (
+                              value.equalsIgnoreCase(
+                                      "See quest walkthrough"
+                              )) {
+
                           continue;
                       }
+
 
                       parent.addView(
                               text(
@@ -1355,36 +1587,30 @@ jobs:
 
 
               // ======================================================
-              // ITEM COMPILER
-              //
-              // Combines:
-              // 1. Explicit quest items
-              // 2. Preparation lines at the beginning of sections
-              // 3. Item-related walkthrough lines
-              //
-              // Everything is deduplicated.
+              // COMPILE ITEMS
               // ======================================================
               private ArrayList<String> compileItems(
-                      JSONObject quest
-              ) {
+                      JSONObject quest) {
 
                   Set<String> found =
                           new LinkedHashSet<>();
 
 
                   // --------------------------------------
-                  // Explicit item field
+                  // EXPLICIT ITEMS
                   // --------------------------------------
                   JSONArray explicit =
                           quest.optJSONArray(
                                   "items"
                           );
 
+
                   if (explicit != null) {
 
-                      for (int i = 0;
-                           i < explicit.length();
-                           i++) {
+                      for (
+                              int i = 0;
+                              i < explicit.length();
+                              i++) {
 
                           String value =
                                   explicit.optString(
@@ -1392,7 +1618,12 @@ jobs:
                                           ""
                                   ).trim();
 
-                          if (isUsefulItemLine(value)) {
+
+                          if (
+                                  isUsefulItemLine(
+                                          value
+                                  )) {
+
                               found.add(value);
                           }
                       }
@@ -1400,32 +1631,39 @@ jobs:
 
 
                   // --------------------------------------
-                  // Walkthrough
+                  // WALKTHROUGH
                   // --------------------------------------
                   JSONArray walkthrough =
                           quest.optJSONArray(
                                   "walkthrough"
                           );
 
+
                   if (walkthrough != null) {
 
-                      for (int sectionIndex = 0;
-                           sectionIndex < walkthrough.length();
-                           sectionIndex++) {
+                      for (
+                              int sectionIndex = 0;
+                              sectionIndex <
+                                      walkthrough.length();
+                              sectionIndex++) {
 
                           JSONObject section =
-                                  walkthrough.optJSONObject(
-                                          sectionIndex
-                                  );
+                                  walkthrough
+                                      .optJSONObject(
+                                              sectionIndex
+                                      );
+
 
                           if (section == null) {
                               continue;
                           }
 
+
                           JSONArray steps =
                                   section.optJSONArray(
                                           "steps"
                                   );
+
 
                           if (steps == null) {
                               continue;
@@ -1436,15 +1674,17 @@ jobs:
                                   false;
 
 
-                          for (int i = 0;
-                               i < steps.length();
-                               i++) {
+                          for (
+                                  int i = 0;
+                                  i < steps.length();
+                                  i++) {
 
                               String step =
                                       steps.optString(
                                               i,
                                               ""
                                       ).trim();
+
 
                               if (step.isEmpty()) {
                                   continue;
@@ -1453,28 +1693,41 @@ jobs:
 
                               if (!preparationFinished) {
 
-                                  if (looksLikePreparation(step)) {
+                                  if (
+                                          looksLikePreparation(
+                                                  step
+                                          )) {
 
                                       found.add(step);
 
-                                  } else if (startsWithAction(step)) {
+                                  } else if (
+                                          startsWithAction(
+                                                  step
+                                          )) {
 
-                                      preparationFinished = true;
+                                      preparationFinished =
+                                              true;
 
-                                  } else if (isItemStep(step)) {
+                                  } else if (
+                                          isItemStep(
+                                                  step
+                                          )) {
 
                                       found.add(step);
 
                                   } else {
 
-                                      preparationFinished = true;
+                                      preparationFinished =
+                                              true;
                                   }
 
                               } else {
 
-                                  // Don't add every ordinary action.
-                                  // Only add obvious item lines.
-                                  if (isStrongItemLine(step)) {
+                                  if (
+                                          isStrongItemLine(
+                                                  step
+                                          )) {
+
                                       found.add(step);
                                   }
                               }
@@ -1484,10 +1737,11 @@ jobs:
 
 
                   // --------------------------------------
-                  // Remove generic database placeholders
+                  // CLEAN RESULTS
                   // --------------------------------------
                   ArrayList<String> result =
                           new ArrayList<>();
+
 
                   for (String value : found) {
 
@@ -1496,22 +1750,31 @@ jobs:
                                       Locale.ROOT
                               );
 
-                      if (lower.equals(
-                              "see walkthrough"
-                      )) {
+
+                      if (
+                              lower.equals(
+                                      "see walkthrough"
+                              )) {
+
                           continue;
                       }
 
-                      if (lower.equals(
-                              "see quest walkthrough"
-                      )) {
+
+                      if (
+                              lower.equals(
+                                      "see quest walkthrough"
+                              )) {
+
                           continue;
                       }
+
 
                       if (value.length() > 2) {
+
                           result.add(value);
                       }
                   }
+
 
                   return result;
               }
@@ -1521,8 +1784,7 @@ jobs:
               // PREPARATION DETECTOR
               // ======================================================
               private boolean looksLikePreparation(
-                      String step
-              ) {
+                      String step) {
 
                   String s =
                           step.toLowerCase(
@@ -1531,119 +1793,226 @@ jobs:
 
 
                   String[] prefixes = {
+
                           "any ",
+
                           "decent ",
+
                           "bring ",
+
                           "have ",
+
                           "you will need ",
+
                           "you'll need ",
+
                           "needed:",
+
                           "required:",
+
                           "recommended:",
+
                           "combat gear",
+
                           "gear ",
+
                           "equipment",
+
                           "food",
+
                           "runes",
+
                           "teleport",
+
                           "teleports",
+
                           "a ",
+
                           "an ",
+
                           "some "
                   };
 
 
-                  for (String prefix : prefixes) {
+                  for (
+                          String prefix :
+                          prefixes) {
 
-                      if (s.startsWith(prefix)) {
+                      if (
+                              s.startsWith(
+                                      prefix
+                              )) {
+
                           return true;
                       }
                   }
 
 
                   String[] keywords = {
+
                           "gear",
+
                           "equipment",
+
                           "food",
+
                           "runes",
+
                           "teleport",
+
                           "necklace",
+
                           "amulet",
+
                           "talisman",
+
                           "staff",
+
                           "axe",
+
                           "pickaxe",
+
                           "harpoon",
+
                           "spade",
+
                           "hammer",
+
                           "bucket",
+
                           "jug",
+
                           "vial",
+
                           "potion",
+
                           "antipoison",
+
                           "antifire",
+
                           "weapon",
+
                           "armour",
+
                           "armor",
+
                           "boots",
+
                           "gloves",
+
                           "cape",
+
                           "ring",
+
                           "shield",
+
                           "helmet",
+
                           "hat",
+
                           "bow",
+
                           "crossbow",
+
                           "arrows",
+
                           "arrow",
+
                           "bolts",
+
                           "bolt",
+
                           "ammo",
+
                           "dagger",
+
                           "sword",
+
                           "scimitar",
+
                           "mace",
+
                           "spear",
+
                           "rod",
+
                           "rope",
+
                           "coins",
+
                           "coin",
+
                           "logs",
+
                           "log",
+
                           "coal",
+
                           "ore",
+
                           "knife",
+
                           "needle",
+
                           "thread",
+
                           "chisel",
+
                           "tinderbox",
+
                           "lantern",
+
                           "candle",
+
                           "torch",
+
                           "pot",
+
                           "cake",
+
                           "milk",
+
                           "meat",
+
                           "shark",
+
                           "lobster",
+
                           "monkfish",
+
                           "karambwan",
+
                           "restore",
+
                           "stamina",
+
                           "tablet",
+
                           "xeric",
+
                           "kharedst",
+
                           "cat",
+
                           "flail",
+
                           "shears",
+
                           "seeds",
+
                           "seed"
                   };
 
 
-                  for (String keyword : keywords) {
+                  for (
+                          String keyword :
+                          keywords) {
 
-                      if (s.contains(keyword)) {
+                      if (
+                              s.contains(
+                                      keyword
+                              )) {
+
                           return true;
                       }
                   }
@@ -1657,8 +2026,7 @@ jobs:
               // STRONG ITEM LINE
               // ======================================================
               private boolean isStrongItemLine(
-                      String step
-              ) {
+                      String step) {
 
                   String s =
                           step.toLowerCase(
@@ -1667,39 +2035,72 @@ jobs:
 
 
                   String[] strong = {
+
                           "bring ",
+
                           "take ",
+
                           "equip ",
+
                           "wear ",
+
                           "wield ",
+
                           "use ",
+
                           "carry ",
+
                           "have ",
+
                           "obtain ",
+
                           "get ",
+
                           "buy ",
+
                           "grab ",
+
                           "bank ",
+
                           "withdraw ",
+
                           "inventory",
+
                           "runes",
+
                           "food",
+
                           "gear",
+
                           "equipment",
+
                           "potion",
+
                           "teleport",
+
                           "amulet",
+
                           "necklace",
+
                           "ring",
+
                           "weapon",
+
                           "armour",
+
                           "armor"
                   };
 
 
-                  for (String keyword : strong) {
+                  for (
+                          String keyword :
+                          strong) {
 
-                      if (s.contains(keyword)) {
+                      if (
+                              s.contains(
+                                      keyword
+                              )) {
+
                           return true;
                       }
                   }
@@ -1713,48 +2114,64 @@ jobs:
               // ITEM STEP
               // ======================================================
               private boolean isItemStep(
-                      String step
-              ) {
+                      String step) {
 
-                  if (step == null
-                          || step.trim().isEmpty()) {
+                  if (
+                          step == null
+                                  ||
+                          step.trim().isEmpty()) {
+
                       return false;
                   }
 
-                  return looksLikePreparation(step)
-                          || isStrongItemLine(step);
+
+                  return looksLikePreparation(
+                          step
+                  )
+                          ||
+                         isStrongItemLine(
+                                 step
+                         );
               }
 
 
               // ======================================================
-              // USEFUL ITEM LINE
+              // USEFUL ITEM
               // ======================================================
               private boolean isUsefulItemLine(
-                      String value
-              ) {
+                      String value) {
 
                   if (value == null) {
                       return false;
                   }
 
+
                   String s =
                           value.trim();
+
 
                   if (s.isEmpty()) {
                       return false;
                   }
 
-                  if (s.equalsIgnoreCase(
-                          "See walkthrough"
-                  )) {
+
+                  if (
+                          s.equalsIgnoreCase(
+                                  "See walkthrough"
+                          )) {
+
                       return false;
                   }
 
-                  if (s.equalsIgnoreCase(
-                          "See quest walkthrough"
-                  )) {
+
+                  if (
+                          s.equalsIgnoreCase(
+                                  "See quest walkthrough"
+                          )) {
+
                       return false;
                   }
+
 
                   return true;
               }
@@ -1764,8 +2181,7 @@ jobs:
               // ACTION DETECTOR
               // ======================================================
               private boolean startsWithAction(
-                      String step
-              ) {
+                      String step) {
 
                   String s =
                           step.toLowerCase(
@@ -1774,41 +2190,76 @@ jobs:
 
 
                   String[] actions = {
+
                           "talk to ",
+
                           "speak to ",
+
                           "speak with ",
+
                           "go to ",
+
                           "travel to ",
+
                           "walk to ",
+
                           "enter ",
+
                           "leave ",
+
                           "climb ",
+
                           "search ",
+
                           "open ",
+
                           "close ",
+
                           "kill ",
+
                           "fight ",
+
                           "attack ",
+
                           "use ",
+
                           "pickpocket ",
+
                           "mine ",
+
                           "fish ",
+
                           "cut ",
+
                           "chop ",
+
                           "cook ",
+
                           "bury ",
+
                           "dig ",
+
                           "read ",
+
                           "look ",
+
                           "return ",
+
                           "head to ",
+
                           "teleport to "
                   };
 
 
-                  for (String action : actions) {
+                  for (
+                          String action :
+                          actions) {
 
-                      if (s.startsWith(action)) {
+                      if (
+                              s.startsWith(
+                                      action
+                              )) {
+
                           return true;
                       }
                   }
@@ -1821,13 +2272,15 @@ jobs:
 
 
       # ============================================================
-      # 9. BUILD APK
+      # 9. BUILD
       # ============================================================
-      - name: Build debug APK
+      - name: Build QuestMate APK
         run: |
           set -e
 
-          gradle --version
+          echo "========================================"
+          echo "Starting QuestMate build"
+          echo "========================================"
 
           gradle \
             --no-daemon \
@@ -1845,24 +2298,39 @@ jobs:
           APK="app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -f "$APK" ]; then
-            echo "ERROR: APK was not produced."
-            find app/build -type f | sort || true
+
+            echo "ERROR: APK was not created."
+
+            echo ""
+            echo "Files under app/build:"
+
+            find app/build \
+              -type f \
+              -print \
+              || true
+
             exit 1
           fi
 
+
           mkdir -p release
 
-          cp "$APK" "release/QuestMate-Complete.apk"
+          cp \
+            "$APK" \
+            "release/QuestMate-Complete.apk"
+
 
           echo ""
           echo "========================================"
-          echo "QuestMate Complete APK created"
+          echo "BUILD SUCCESSFUL"
           echo "========================================"
-          ls -lh release/QuestMate-Complete.apk
+
+          ls -lh \
+            release/QuestMate-Complete.apk
 
 
       # ============================================================
-      # 11. UPLOAD EXACTLY ONE ARTIFACT
+      # 11. UPLOAD ONLY ONE ARTIFACT
       # ============================================================
       - name: Upload QuestMate Complete APK
         uses: actions/upload-artifact@v4
