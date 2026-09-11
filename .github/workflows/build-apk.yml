@@ -1,4 +1,4 @@
-name: Build QuestMate Items - Fixed
+name: Build QuestMate Complete
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
 
 
       # ============================================================
-      # 2. JAVA 17
+      # 2. JAVA
       # ============================================================
 
       - name: Set up Java 17
@@ -33,10 +33,39 @@ jobs:
 
 
       # ============================================================
-      # 3. FIND WORKING QUESTMATE APK
+      # 3. ANDROID SDK
       # ============================================================
 
-      - name: Find QuestMate APK
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+
+      # ============================================================
+      # 4. GRADLE
+      # ============================================================
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+
+      # ============================================================
+      # 5. FIND THE EXISTING QUESTMATE APK
+      #
+      # The old APK is only used as the source for quests.json.
+      # We are NOT modifying the old application.
+      # ============================================================
+
+      - name: Find existing QuestMate APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -45,16 +74,18 @@ jobs:
           mkdir -p input
 
           echo "=========================================="
-          echo " FINDING WORKING QUESTMATE APK"
+          echo " FINDING QUESTMATE DATABASE"
           echo "=========================================="
 
-          # First look for an APK directly in the repository.
+          # --------------------------------------------------------
+          # Prefer QuestMate.apk in the repository.
+          # --------------------------------------------------------
 
           if [ -f "QuestMate.apk" ]; then
 
-            echo "Found QuestMate.apk in repository."
-
             cp QuestMate.apk input/QuestMate.apk
+
+            echo "Using QuestMate.apk from repository."
 
           else
 
@@ -89,19 +120,18 @@ jobs:
               echo " ERROR"
               echo "=========================================="
               echo ""
-              echo "No QuestMate APK was found."
+              echo "No QuestMate APK artifact was found."
               echo ""
-              echo "You need either:"
-              echo "QuestMate.apk in the repository root"
-              echo "OR"
-              echo "a previous QuestMate APK artifact."
+              echo "Put QuestMate.apk in the repository root"
+              echo "and run this workflow again."
               echo ""
 
               exit 1
 
             fi
 
-            echo "Using artifact ID:"
+            echo ""
+            echo "Using APK artifact ID:"
             echo "$ARTIFACT_ID"
 
             curl -fsSL \
@@ -124,7 +154,7 @@ jobs:
 
             if [ -z "$FOUND_APK" ]; then
 
-              echo "ERROR: No APK was found inside artifact."
+              echo "ERROR: Selected artifact did not contain an APK."
 
               find input/extracted \
                 -type f \
@@ -144,937 +174,1599 @@ jobs:
 
 
       # ============================================================
-      # 4. INSTALL APKTOOL
+      # 6. EXTRACT THE QUEST DATABASE
+      #
+      # The old UI is NOT reused.
+      #
+      # Only quests.json is used.
       # ============================================================
 
-      - name: Install Apktool
+      - name: Extract quest database
         run: |
           set -e
 
-          curl -fsSL \
-            -o apktool.jar \
-            "https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar"
+          mkdir -p app/src/main/assets
 
-          echo "Apktool version:"
-
-          java -jar apktool.jar --version
-
-
-      # ============================================================
-      # 5. DECODE APK
-      #
-      # IMPORTANT:
-      #
-      # We DO NOT use --no-res here.
-      #
-      # The previous workflow used --no-res and consequently left
-      # AndroidManifest.xml in binary form.
-      #
-      # This normal decode converts it to XML so it can safely be
-      # modified.
-      #
-      # --no-src keeps the existing DEX/code untouched.
-      # ============================================================
-
-      - name: Decode QuestMate APK
-        run: |
-          set -e
-
-          rm -rf work
-
-          mkdir -p work
-
-          echo "Decoding APK..."
-
-          java -jar apktool.jar d \
-            --no-src \
-            --force \
+          unzip -p \
             input/QuestMate.apk \
-            -o work/questmate
-
-          echo ""
-          echo "APK decoded successfully."
-
-
-      # ============================================================
-      # 6. CHECK MANIFEST
-      # ============================================================
-
-      - name: Check decoded manifest
-        run: |
-          set -e
-
-          if [ ! -f "work/questmate/AndroidManifest.xml" ]; then
-
-            echo "ERROR: AndroidManifest.xml was not decoded."
-
-            exit 1
-
-          fi
-
-          echo "Manifest found."
-
-          file work/questmate/AndroidManifest.xml
-
-          echo ""
-          echo "First lines of manifest:"
-          head -n 30 work/questmate/AndroidManifest.xml
-
-
-      # ============================================================
-      # 7. CHECK QUEST DATABASE
-      # ============================================================
-
-      - name: Check quest database
-        run: |
-          set -e
-
-          if [ ! -f "work/questmate/assets/quests.json" ]; then
-
-            echo "ERROR: assets/quests.json was not found."
-
-            echo ""
-            echo "Assets directory:"
-
-            find work/questmate/assets \
-              -maxdepth 2 \
-              -type f \
-              -print
-
-            exit 1
-
-          fi
-
-          echo "quests.json found."
+            assets/quests.json \
+            > app/src/main/assets/quests.json
 
           python3 -m json.tool \
-            work/questmate/assets/quests.json \
+            app/src/main/assets/quests.json \
             > /dev/null
 
-          echo "quests.json is valid."
-
-
-      # ============================================================
-      # 8. COMPILE QUEST ITEMS
-      #
-      # Existing walkthroughs are preserved.
-      #
-      # Existing item references are preserved.
-      #
-      # The top-level items list receives the compiled entries.
-      # ============================================================
-
-      - name: Compile quest item lists
-        run: |
-
-          cat > work/compile_items.py <<'PY'
-          import json
-          import re
-
-          PATH = "work/questmate/assets/quests.json"
-
-          with open(PATH, "r", encoding="utf-8") as f:
-              quests = json.load(f)
-
-          item_words = [
-              "gear",
-              "equipment",
-              "food",
-              "runes",
-              "rune",
-              "teleport",
-              "teleports",
-              "necklace",
-              "amulet",
-              "talisman",
-              "staff",
-              "axe",
-              "pickaxe",
-              "harpoon",
-              "spade",
-              "hammer",
-              "bucket",
-              "jug",
-              "vial",
-              "potion",
-              "antipoison",
-              "antifire",
-              "anti-fire",
-              "weapon",
-              "armour",
-              "armor",
-              "boots",
-              "gloves",
-              "cape",
-              "ring",
-              "shield",
-              "helmet",
-              "hat",
-              "bow",
-              "crossbow",
-              "arrows",
-              "arrow",
-              "bolts",
-              "bolt",
-              "ammo",
-              "ammunition",
-              "dagger",
-              "sword",
-              "scimitar",
-              "mace",
-              "spear",
-              "rod",
-              "rods",
-              "rope",
-              "coins",
-              "coin",
-              "logs",
-              "log",
-              "coal",
-              "ore",
-              "knife",
-              "needle",
-              "thread",
-              "chisel",
-              "tinderbox",
-              "lantern",
-              "candle",
-              "torch",
-              "pot",
-              "potato",
-              "cake",
-              "meat",
-              "shark",
-              "lobster",
-              "monkfish",
-              "karambwan",
-              "prayer potion",
-              "super restore",
-              "stamina",
-              "energy potion",
-              "strength potion",
-              "combat potion",
-              "ranging potion",
-              "magic potion",
-              "tablet",
-              "tablets",
-              "fairy ring",
-              "skills necklace",
-              "games necklace",
-              "ring of dueling",
-              "xeric",
-              "kharedst"
-          ]
-
-          action_starts = [
-              "talk ",
-              "speak ",
-              "search ",
-              "enter ",
-              "kill ",
-              "fight ",
-              "cast ",
-              "read ",
-              "open ",
-              "chop ",
-              "solve ",
-              "inspect ",
-              "watch ",
-              "return ",
-              "go ",
-              "travel ",
-              "pickpocket ",
-              "use ",
-              "take ",
-              "buy ",
-              "mine ",
-              "cook ",
-              "light ",
-              "climb ",
-              "equip ",
-              "withdraw ",
-              "bank ",
-              "dig ",
-              "cut ",
-              "complete ",
-              "finish ",
-              "start ",
-              "locate ",
-              "investigate ",
-              "collect ",
-              "pick ",
-              "loot ",
-              "head ",
-              "walk ",
-              "run ",
-              "proceed ",
-              "leave ",
-              "defeat "
-          ]
-
-          def clean(value):
-              value = str(value).strip()
-              value = re.sub(r"\s+", " ", value)
-              value = re.sub(r"[.!]+$", "", value)
-              return value.strip()
-
-          def key(value):
-              return clean(value).lower()
-
-          def is_action(value):
-              low = key(value)
-
-              for start in action_starts:
-                  if low.startswith(start):
-                      return True
-
-              return False
-
-          def is_item(value):
-
-              value = clean(value)
-
-              if not value:
-                  return False
-
-              if is_action(value):
-                  return False
-
-              low = value.lower()
-
-              special = [
-                  "any ",
-                  "decent food",
-                  "melee combat gear",
-                  "ranged combat gear",
-                  "magic combat gear",
-                  "combat gear",
-                  "melee or range gear",
-                  "ranged or melee gear",
-                  "melee or magic gear",
-                  "magic or range gear",
-                  "gear to",
-                  "equipment to",
-                  "runes/equipment",
-                  "bring ",
-                  "have ",
-                  "bring at least ",
-                  "you will need ",
-                  "you'll need ",
-                  "needed:",
-                  "required:",
-                  "recommended:",
-                  "requires "
-              ]
-
-              for phrase in special:
-                  if low.startswith(phrase):
-                      return True
-
-              for word in item_words:
-                  if word in low:
-                      return True
-
-              return False
-
-          def add(items, value):
-
-              value = clean(value)
-
-              if not value:
-                  return
-
-              ignored = {
-                  "see walkthrough",
-                  "see quest walkthrough",
-                  "none",
-                  "n/a"
-              }
-
-              if key(value) in ignored:
-                  return
-
-              existing = {
-                  key(item)
-                  for item in items
-              }
-
-              if key(value) not in existing:
-                  items.append(value)
-
-          for quest in quests:
-
-              compiled = []
-
-              # --------------------------------------------
-              # Preserve existing top-level items.
-              # --------------------------------------------
-
-              existing = quest.get("items", [])
-
-              if isinstance(existing, list):
-
-                  for item in existing:
-
-                      if isinstance(item, str):
-
-                          if key(item) not in {
-                              "see walkthrough",
-                              "see quest walkthrough",
-                              "none",
-                              "n/a"
-                          }:
-                              add(compiled, item)
-
-              # --------------------------------------------
-              # Scan walkthrough sections.
-              # --------------------------------------------
-
-              walkthrough = quest.get("walkthrough", [])
-
-              if isinstance(walkthrough, list):
-
-                  for section in walkthrough:
-
-                      if not isinstance(section, dict):
-                          continue
-
-                      steps = section.get("steps", [])
-
-                      if not isinstance(steps, list):
-                          continue
-
-                      for step in steps:
-
-                          if not isinstance(step, str):
-                              continue
-
-                          if is_item(step):
-                              add(compiled, step)
-
-              # --------------------------------------------
-              # Never leave an empty list.
-              # --------------------------------------------
-
-              if not compiled:
-                  compiled = ["See walkthrough"]
-
-              quest["items"] = compiled
-
-          with open(PATH, "w", encoding="utf-8") as f:
-
-              json.dump(
-                  quests,
-                  f,
-                  ensure_ascii=False,
-                  indent=2
-              )
-
-              f.write("\n")
-
-          print("")
-          print("==========================================")
-          print(" COMPILED ITEMS")
-          print("==========================================")
-
-          for quest in quests[:20]:
-
-              print("")
-              print(quest.get("title", "Unknown quest"))
-
-              for item in quest.get("items", []):
-                  print("  •", item)
-
-          print("")
-          print("==========================================")
-          PY
-
-          python3 work/compile_items.py
-
-          python3 -m json.tool \
-            work/questmate/assets/quests.json \
-            > /dev/null
-
-          echo "Quest item compilation complete."
-
-
-      # ============================================================
-      # 9. CHANGE APPLICATION ID
-      #
-      # This makes the new APK a completely separate Android app.
-      #
-      # Original:
-      #   whatever the original APK uses
-      #
-      # New:
-      #   com.questmate.items
-      #
-      # Existing QuestMate can therefore remain installed.
-      # ============================================================
-
-      - name: Create separate QuestMate Items package
-        run: |
-          set -e
-
-          MANIFEST="work/questmate/AndroidManifest.xml"
-
-          echo "Reading decoded XML manifest..."
+          echo ""
+          echo "Quest database is valid."
 
           python3 - <<'PY'
-          import re
+          import json
 
-          path = "work/questmate/AndroidManifest.xml"
+          path = "app/src/main/assets/quests.json"
 
-          with open(path, "r", encoding="utf-8") as f:
-              text = f.read()
+          with open(path, encoding="utf-8") as f:
+              quests = json.load(f)
 
-          # --------------------------------------------------------
-          # Find original package.
-          # --------------------------------------------------------
+          step_count = 0
 
-          match = re.search(
-              r'<manifest\b[^>]*\bpackage\s*=\s*"([^"]+)"',
-              text
-          )
-
-          if not match:
-
-              print("Could not find package attribute.")
-              print("")
-              print(text[:3000])
-
-              raise SystemExit(1)
-
-          old_package = match.group(1)
-
-          new_package = "com.questmate.items"
-
-          print("Original package:")
-          print(old_package)
+          for quest in quests:
+              for section in quest.get("walkthrough", []):
+                  step_count += len(section.get("steps", []))
 
           print("")
-          print("New package:")
-          print(new_package)
-
-          # --------------------------------------------------------
-          # Replace manifest package.
-          # --------------------------------------------------------
-
-          pattern = (
-              r'(<manifest\b[^>]*\bpackage\s*=\s*")'
-              + re.escape(old_package)
-              + r'(")'
-          )
-
-          text, count = re.subn(
-              pattern,
-              r'\g<1>' + new_package + r'\g<2>',
-              text,
-              count=1
-          )
-
-          if count != 1:
-              raise SystemExit(
-                  "Failed to replace manifest package."
-              )
-
-          # --------------------------------------------------------
-          # Give the application a separate visible name.
-          #
-          # If the existing manifest has android:label, replace it.
-          # Otherwise insert one.
-          # --------------------------------------------------------
-
-          label_pattern = (
-              r'(android:label\s*=\s*")[^"]+(")'
-          )
-
-          if re.search(label_pattern, text):
-
-              text = re.sub(
-                  label_pattern,
-                  r'\g<1>QuestMate Items\g<2>',
-                  text,
-                  count=1
-              )
-
-          else:
-
-              text = text.replace(
-                  "<application",
-                  '<application android:label="QuestMate Items"',
-                  1
-              )
-
-          # --------------------------------------------------------
-          # Set a distinct version name/code.
-          # --------------------------------------------------------
-
-          version_code_pattern = (
-              r'(android:versionCode\s*=\s*")[^"]+(")'
-          )
-
-          if re.search(version_code_pattern, text):
-
-              text = re.sub(
-                  version_code_pattern,
-                  r'\g<1>3001\g<2>',
-                  text,
-                  count=1
-              )
-
-          version_name_pattern = (
-              r'(android:versionName\s*=\s*")[^"]+(")'
-          )
-
-          if re.search(version_name_pattern, text):
-
-              text = re.sub(
-                  version_name_pattern,
-                  r'\g<1>3.0-items\g<2>',
-                  text,
-                  count=1
-              )
-
-          with open(path, "w", encoding="utf-8") as f:
-              f.write(text)
-
+          print("==========================================")
+          print(" QUEST DATABASE")
+          print("==========================================")
           print("")
-          print("Manifest successfully changed.")
-
+          print("Quest records:", len(quests))
+          print("Walkthrough steps:", step_count)
           print("")
-          print("New app:")
-          print("QuestMate Items")
-
-          print("")
-          print("New package:")
-          print("com.questmate.items")
+          print("==========================================")
           PY
 
 
       # ============================================================
-      # 10. VERIFY MANIFEST
+      # 7. CREATE ANDROID PROJECT
       # ============================================================
 
-      - name: Verify separate package
+      - name: Create clean Android project
         run: |
           set -e
 
-          MANIFEST="work/questmate/AndroidManifest.xml"
+          mkdir -p \
+            app/src/main/java/com/questmate/complete
+
+
+          # --------------------------------------------------------
+          # SETTINGS
+          # --------------------------------------------------------
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "QuestMateComplete"
+
+          include(":app")
+          EOF
+
+
+          # --------------------------------------------------------
+          # ROOT BUILD
+          # --------------------------------------------------------
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id "com.android.application" version "8.7.3" apply false
+          }
+          EOF
+
+
+          # --------------------------------------------------------
+          # APP BUILD
+          # --------------------------------------------------------
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id "com.android.application"
+          }
+
+          android {
+
+              namespace "com.questmate.complete"
+
+              compileSdk 35
+
+              defaultConfig {
+
+                  applicationId "com.questmate.complete"
+
+                  minSdk 23
+
+                  targetSdk 35
+
+                  versionCode 1
+
+                  versionName "1.0"
+              }
+          }
+          EOF
+
+
+          # --------------------------------------------------------
+          # MANIFEST
+          # --------------------------------------------------------
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+
+          <manifest
+              xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <application
+                  android:allowBackup="false"
+                  android:label="QuestMate Complete"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:screenOrientation="portrait"
+                      android:exported="true">
+
+                      <intent-filter>
+
+                          <action
+                              android:name="android.intent.action.MAIN" />
+
+                          <category
+                              android:name="android.intent.category.LAUNCHER" />
+
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+
+          </manifest>
+          EOF
+
+
+      # ============================================================
+      # 8. CREATE NEW QUESTMATE APPLICATION
+      # ============================================================
+
+      - name: Create QuestMate Complete application
+        run: |
+
+          cat > app/src/main/java/com/questmate/complete/MainActivity.java <<'EOF'
+          package com.questmate.complete;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+
+          import android.graphics.drawable.GradientDrawable;
+
+          import android.text.InputType;
+          import android.text.TextWatcher;
+          import android.text.Editable;
+
+          import android.view.View;
+          import android.view.ViewGroup;
+
+          import android.widget.*;
+
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+
+          import java.io.BufferedReader;
+          import java.io.InputStream;
+          import java.io.InputStreamReader;
+
+          import java.util.ArrayList;
+          import java.util.HashSet;
+          import java.util.Locale;
+
+
+          public class MainActivity extends Activity {
+
+              private final ArrayList<JSONObject> quests =
+                      new ArrayList<>();
+
+              private final ArrayList<String> questNames =
+                      new ArrayList<>();
+
+              private ArrayAdapter<String> adapter;
+
+              private ListView questList;
+
+              private EditText searchBox;
+
+
+              // ----------------------------------------------------
+              // SCREEN HELPERS
+              // ----------------------------------------------------
+
+              private int dp(float value) {
+
+                  return (int)(
+                          value *
+                          getResources()
+                                  .getDisplayMetrics()
+                                  .density
+                          + 0.5f
+                  );
+              }
+
+
+              private TextView makeText(
+                      String value,
+                      float size,
+                      boolean bold) {
+
+                  TextView text =
+                          new TextView(this);
+
+                  text.setText(value);
+
+                  text.setTextSize(size);
+
+                  text.setTextColor(Color.WHITE);
+
+                  text.setTypeface(
+                          bold
+                                  ? Typeface.DEFAULT_BOLD
+                                  : Typeface.DEFAULT
+                  );
+
+                  text.setPadding(
+                          dp(12),
+                          dp(7),
+                          dp(12),
+                          dp(7)
+                  );
+
+                  return text;
+              }
+
+
+              private GradientDrawable background(
+                      int color,
+                      int radius) {
+
+                  GradientDrawable drawable =
+                          new GradientDrawable();
+
+                  drawable.setColor(color);
+
+                  drawable.setCornerRadius(
+                          dp(radius)
+                  );
+
+                  return drawable;
+              }
+
+
+              private LinearLayout baseLayout() {
+
+                  LinearLayout layout =
+                          new LinearLayout(this);
+
+                  layout.setOrientation(
+                          LinearLayout.VERTICAL
+                  );
+
+                  layout.setPadding(
+                          dp(10),
+                          dp(10),
+                          dp(10),
+                          dp(25)
+                  );
+
+                  layout.setBackgroundColor(
+                          Color.rgb(18,18,18)
+                  );
+
+                  return layout;
+              }
+
+
+              private void addText(
+                      LinearLayout layout,
+                      String value,
+                      float size,
+                      boolean bold) {
+
+                  layout.addView(
+                          makeText(value,size,bold),
+                          new LinearLayout.LayoutParams(
+                                  -1,
+                                  -2
+                          )
+                  );
+              }
+
+
+              // ----------------------------------------------------
+              // START
+              // ----------------------------------------------------
+
+              @Override
+              public void onCreate(Bundle state) {
+
+                  super.onCreate(state);
+
+                  getWindow().setStatusBarColor(
+                          Color.rgb(12,12,12)
+                  );
+
+                  loadQuests();
+
+                  showQuestList();
+              }
+
+
+              // ----------------------------------------------------
+              // LOAD QUESTS
+              // ----------------------------------------------------
+
+              private void loadQuests() {
+
+                  try {
+
+                      InputStream input =
+                              getAssets().open(
+                                      "quests.json"
+                              );
+
+                      BufferedReader reader =
+                              new BufferedReader(
+                                      new InputStreamReader(
+                                              input,
+                                              "UTF-8"
+                                      )
+                              );
+
+                      StringBuilder data =
+                              new StringBuilder();
+
+                      String line;
+
+                      while (
+                              (line = reader.readLine())
+                                      != null
+                      ) {
+
+                          data.append(line);
+                      }
+
+                      JSONArray array =
+                              new JSONArray(
+                                      data.toString()
+                              );
+
+                      for (
+                              int i = 0;
+                              i < array.length();
+                              i++
+                      ) {
+
+                          JSONObject quest =
+                                  array.getJSONObject(i);
+
+                          quests.add(quest);
+
+                          questNames.add(
+                                  quest.optString(
+                                          "title",
+                                          "Quest"
+                                  )
+                          );
+                      }
+
+                      reader.close();
+
+                  } catch(Exception error) {
+
+                      Toast.makeText(
+                              this,
+                              "Could not load quest database.",
+                              Toast.LENGTH_LONG
+                      ).show();
+                  }
+              }
+
+
+              // ----------------------------------------------------
+              // QUEST LIST
+              // ----------------------------------------------------
+
+              private void showQuestList() {
+
+                  LinearLayout root =
+                          baseLayout();
+
+
+                  TextView title =
+                          makeText(
+                                  "QuestMate Complete",
+                                  25,
+                                  true
+                          );
+
+                  root.addView(
+                          title,
+                          new LinearLayout.LayoutParams(
+                                  -1,
+                                  dp(50)
+                          )
+                  );
+
+
+                  TextView subtitle =
+                          makeText(
+                                  "Full quest walkthroughs • Items marked as needed",
+                                  13,
+                                  false
+                          );
+
+                  subtitle.setTextColor(
+                          Color.LTGRAY
+                  );
+
+                  root.addView(
+                          subtitle,
+                          new LinearLayout.LayoutParams(
+                                  -1,
+                                  -2
+                          )
+                  );
+
+
+                  searchBox =
+                          new EditText(this);
+
+                  searchBox.setHint(
+                          "Search quests..."
+                  );
+
+                  searchBox.setHintTextColor(
+                          Color.LTGRAY
+                  );
+
+                  searchBox.setTextColor(
+                          Color.WHITE
+                  );
+
+                  searchBox.setSingleLine(
+                          true
+                  );
+
+                  searchBox.setInputType(
+                          InputType.TYPE_CLASS_TEXT
+                  );
+
+                  searchBox.setPadding(
+                          dp(14),
+                          0,
+                          dp(14),
+                          0
+                  );
+
+                  searchBox.setBackground(
+                          background(
+                                  Color.rgb(45,45,45),
+                                  14
+                          )
+                  );
+
+                  LinearLayout.LayoutParams searchParams =
+                          new LinearLayout.LayoutParams(
+                                  -1,
+                                  dp(52)
+                          );
+
+                  searchParams.setMargins(
+                          0,
+                          dp(8),
+                          0,
+                          dp(8)
+                  );
+
+                  root.addView(
+                          searchBox,
+                          searchParams
+                  );
+
+
+                  questList =
+                          new ListView(this);
+
+                  questList.setDivider(null);
+
+                  questList.setBackgroundColor(
+                          Color.rgb(18,18,18)
+                  );
+
+
+                  adapter =
+                          new ArrayAdapter<String>(
+                                  this,
+                                  android.R.layout
+                                          .simple_list_item_1,
+                                  new ArrayList<>(
+                                          questNames
+                                  )
+                          ) {
+
+                              @Override
+                              public View getView(
+                                      int position,
+                                      View convertView,
+                                      ViewGroup parent) {
+
+                                  TextView view =
+                                          (TextView)
+                                                  super.getView(
+                                                          position,
+                                                          convertView,
+                                                          parent
+                                                  );
+
+                                  view.setTextColor(
+                                          Color.WHITE
+                                  );
+
+                                  view.setTextSize(
+                                          17
+                                  );
+
+                                  view.setPadding(
+                                          dp(14),
+                                          dp(13),
+                                          dp(14),
+                                          dp(13)
+                                  );
+
+                                  return view;
+                              }
+                          };
+
+
+                  questList.setAdapter(
+                          adapter
+                  );
+
+
+                  root.addView(
+                          questList,
+                          new LinearLayout.LayoutParams(
+                                  -1,
+                                  0,
+                                  1
+                          )
+                  );
+
+
+                  setContentView(root);
+
+
+                  searchBox.addTextChangedListener(
+                          new TextWatcher() {
+
+                              @Override
+                              public void beforeTextChanged(
+                                      CharSequence s,
+                                      int start,
+                                      int count,
+                                      int after) {
+                              }
+
+
+                              @Override
+                              public void onTextChanged(
+                                      CharSequence s,
+                                      int start,
+                                      int before,
+                                      int count) {
+
+                                  filterQuests(
+                                          s.toString()
+                                  );
+                              }
+
+
+                              @Override
+                              public void afterTextChanged(
+                                      Editable e) {
+                              }
+                          }
+                  );
+
+
+                  questList.setOnItemClickListener(
+                          (parent, view, position, id) -> {
+
+                              String name =
+                                      adapter.getItem(
+                                              position
+                                      );
+
+                              if (name == null)
+                                  return;
+
+                              for (
+                                      JSONObject quest :
+                                      quests
+                              ) {
+
+                                  if (
+                                          quest.optString(
+                                                  "title"
+                                          ).equals(name)
+                                  ) {
+
+                                      showQuest(
+                                              quest
+                                      );
+
+                                      break;
+                                  }
+                              }
+                          }
+                  );
+              }
+
+
+              // ----------------------------------------------------
+              // SEARCH
+              // ----------------------------------------------------
+
+              private void filterQuests(
+                      String query) {
+
+                  String needle =
+                          query.toLowerCase(
+                                  Locale.ROOT
+                          );
+
+                  ArrayList<String> result =
+                          new ArrayList<>();
+
+                  for (
+                          String name :
+                          questNames
+                  ) {
+
+                      if (
+                              name.toLowerCase(
+                                      Locale.ROOT
+                              ).contains(needle)
+                      ) {
+
+                          result.add(name);
+                      }
+                  }
+
+                  adapter.clear();
+
+                  adapter.addAll(result);
+
+                  adapter.notifyDataSetChanged();
+              }
+
+
+              // ----------------------------------------------------
+              // ITEM DETECTION
+              // ----------------------------------------------------
+
+              private boolean startsWithAction(
+                      String text) {
+
+                  String value =
+                          text.toLowerCase(
+                                  Locale.ROOT
+                          ).trim();
+
+                  String[] actions = {
+
+                          "talk ",
+                          "speak ",
+                          "search ",
+                          "enter ",
+                          "kill ",
+                          "fight ",
+                          "cast ",
+                          "read ",
+                          "open ",
+                          "chop ",
+                          "solve ",
+                          "inspect ",
+                          "watch ",
+                          "return ",
+                          "go ",
+                          "travel ",
+                          "pickpocket ",
+                          "use ",
+                          "take ",
+                          "buy ",
+                          "mine ",
+                          "cook ",
+                          "light ",
+                          "climb ",
+                          "equip ",
+                          "withdraw ",
+                          "bank ",
+                          "dig ",
+                          "cut ",
+                          "complete ",
+                          "finish ",
+                          "start ",
+                          "locate ",
+                          "investigate ",
+                          "collect ",
+                          "pick ",
+                          "loot ",
+                          "head ",
+                          "walk ",
+                          "run ",
+                          "proceed ",
+                          "leave ",
+                          "defeat "
+                  };
+
+
+                  for (
+                          String action :
+                          actions
+                  ) {
+
+                      if (
+                              value.startsWith(
+                                      action
+                              )
+                      ) {
+
+                          return true;
+                      }
+                  }
+
+                  return false;
+              }
+
+
+              private boolean isItemStep(
+                      String text) {
+
+                  String value =
+                          text.toLowerCase(
+                                  Locale.ROOT
+                          ).trim();
+
+
+                  String[] directStarts = {
+
+                          "any ",
+                          "decent food",
+                          "bring ",
+                          "have ",
+                          "you will need ",
+                          "you'll need ",
+                          "needed:",
+                          "required:",
+                          "recommended:",
+                          "combat gear",
+                          "melee combat gear",
+                          "ranged combat gear",
+                          "magic combat gear",
+                          "melee or range gear",
+                          "ranged or melee gear",
+                          "melee or magic gear",
+                          "magic or range gear",
+                          "gear to",
+                          "equipment to",
+                          "runes/equipment"
+                  };
+
+
+                  for (
+                          String start :
+                          directStarts
+                  ) {
+
+                      if (
+                              value.startsWith(
+                                      start
+                              )
+                      ) {
+
+                          return true;
+                      }
+                  }
+
+
+                  String[] itemWords = {
+
+                          "gear",
+                          "equipment",
+                          "food",
+                          "runes",
+                          "rune",
+                          "teleport",
+                          "necklace",
+                          "amulet",
+                          "talisman",
+                          "staff",
+                          "axe",
+                          "pickaxe",
+                          "harpoon",
+                          "spade",
+                          "hammer",
+                          "bucket",
+                          "jug",
+                          "vial",
+                          "potion",
+                          "antipoison",
+                          "antifire",
+                          "anti-fire",
+                          "weapon",
+                          "armour",
+                          "armor",
+                          "boots",
+                          "gloves",
+                          "cape",
+                          "ring",
+                          "shield",
+                          "helmet",
+                          "hat",
+                          "bow",
+                          "crossbow",
+                          "arrows",
+                          "arrow",
+                          "bolts",
+                          "bolt",
+                          "ammo",
+                          "dagger",
+                          "sword",
+                          "scimitar",
+                          "mace",
+                          "spear",
+                          "rod",
+                          "rope",
+                          "coins",
+                          "coin",
+                          "logs",
+                          "log",
+                          "coal",
+                          "ore",
+                          "knife",
+                          "needle",
+                          "thread",
+                          "chisel",
+                          "tinderbox",
+                          "lantern",
+                          "candle",
+                          "torch",
+                          "pot",
+                          "cake",
+                          "milk",
+                          "meat",
+                          "shark",
+                          "lobster",
+                          "monkfish",
+                          "karambwan",
+                          "restore",
+                          "stamina",
+                          "tablet",
+                          "xeric",
+                          "kharedst",
+                          "cat",
+                          "flail",
+                          "shears",
+                          "seeds",
+                          "seed"
+                  };
+
+
+                  for (
+                          String word :
+                          itemWords
+                  ) {
+
+                      if (
+                              value.contains(
+                                      word
+                              )
+                      ) {
+
+                          return true;
+                      }
+                  }
+
+
+                  return false;
+              }
+
+
+              // ----------------------------------------------------
+              // COMPILE TOP ITEM LIST
+              // ----------------------------------------------------
+
+              private ArrayList<String> compileItems(
+                      JSONObject quest) {
+
+                  ArrayList<String> result =
+                          new ArrayList<>();
+
+                  HashSet<String> seen =
+                          new HashSet<>();
+
+
+                  try {
+
+                      JSONArray sections =
+                              quest.optJSONArray(
+                                      "walkthrough"
+                              );
+
+                      if (sections == null)
+                          return result;
+
+
+                      for (
+                              int i = 0;
+                              i < sections.length();
+                              i++
+                      ) {
+
+                          JSONObject section =
+                                  sections.getJSONObject(i);
+
+                          JSONArray steps =
+                                  section.optJSONArray(
+                                          "steps"
+                                  );
+
+                          if (steps == null)
+                              continue;
+
+
+                          for (
+                                  int j = 0;
+                                  j < steps.length();
+                                  j++
+                          ) {
+
+                              String step =
+                                      steps.optString(
+                                              j,
+                                              ""
+                                      ).trim();
+
+
+                              if (
+                                      !isItemStep(step)
+                              ) {
+
+                                  continue;
+                              }
+
+
+                              String key =
+                                      step
+                                              .toLowerCase(
+                                                      Locale.ROOT
+                                              )
+                                              .replaceAll(
+                                                      "[.!?,;:]+$",
+                                                      ""
+                                              )
+                                              .replaceAll(
+                                                      "\\s+",
+                                                      " "
+                                              );
+
+
+                              if (
+                                      !seen.contains(key)
+                              ) {
+
+                                  seen.add(key);
+
+                                  result.add(step);
+                              }
+                          }
+                      }
+
+                  } catch(Exception ignored) {
+                  }
+
+
+                  return result;
+              }
+
+
+              // ----------------------------------------------------
+              // QUEST DETAIL SCREEN
+              // ----------------------------------------------------
+
+              private void showQuest(
+                      JSONObject quest) {
+
+                  ScrollView scroll =
+                          new ScrollView(this);
+
+                  scroll.setFillViewport(
+                          true
+                  );
+
+                  scroll.setBackgroundColor(
+                          Color.rgb(18,18,18)
+                  );
+
+
+                  LinearLayout root =
+                          baseLayout();
+
+
+                  // ------------------------------------------------
+                  // BACK
+                  // ------------------------------------------------
+
+                  Button back =
+                          new Button(this);
+
+                  back.setText(
+                          "← All quests"
+                  );
+
+                  back.setOnClickListener(
+                          v -> showQuestList()
+                  );
+
+                  root.addView(
+                          back,
+                          new LinearLayout.LayoutParams(
+                                  -1,
+                                  dp(52)
+                          )
+                  );
+
+
+                  // ------------------------------------------------
+                  // TITLE
+                  // ------------------------------------------------
+
+                  addText(
+                          root,
+                          quest.optString(
+                                  "title",
+                                  "Quest"
+                          ),
+                          26,
+                          true
+                  );
+
+
+                  // ------------------------------------------------
+                  // META
+                  // ------------------------------------------------
+
+                  addText(
+                          root,
+                          "Difficulty: "
+                                  + quest.optString(
+                                          "difficulty",
+                                          "—"
+                                  )
+                                  + "   •   Length: "
+                                  + quest.optString(
+                                          "length",
+                                          "—"
+                                  )
+                                  + "   •   Quest points: "
+                                  + quest.optInt(
+                                          "qp",
+                                          0
+                                  ),
+                          14,
+                          false
+                  );
+
+
+                  // =================================================
+                  // ITEMS NEEDED AT THE TOP
+                  // =================================================
+
+                  LinearLayout itemBox =
+                          new LinearLayout(this);
+
+                  itemBox.setOrientation(
+                          LinearLayout.VERTICAL
+                  );
+
+                  itemBox.setPadding(
+                          dp(10),
+                          dp(8),
+                          dp(10),
+                          dp(10)
+                  );
+
+                  itemBox.setBackground(
+                          background(
+                                  Color.rgb(
+                                          35,
+                                          60,
+                                          42
+                                  ),
+                                  14
+                          )
+                  );
+
+
+                  addText(
+                          itemBox,
+                          "🧰 ITEMS NEEDED FOR THIS QUEST",
+                          19,
+                          true
+                  );
+
+
+                  ArrayList<String> items =
+                          compileItems(
+                                  quest
+                          );
+
+
+                  if (
+                          items.isEmpty()
+                  ) {
+
+                      addText(
+                              itemBox,
+                              "No special items detected.",
+                              14,
+                              false
+                      );
+
+                  } else {
+
+                      for (
+                              String item :
+                              items
+                      ) {
+
+                          addText(
+                                  itemBox,
+                                  "• " + item,
+                                  14,
+                                  false
+                          );
+                      }
+                  }
+
+
+                  root.addView(
+                          itemBox,
+                          new LinearLayout.LayoutParams(
+                                  -1,
+                                  -2
+                          )
+                  );
+
+
+                  // =================================================
+                  // REQUIREMENTS
+                  // =================================================
+
+                  addText(
+                          root,
+                          "Requirements",
+                          20,
+                          true
+                  );
+
+                  addArray(
+                          root,
+                          quest.optJSONArray(
+                                  "requirements"
+                          )
+                  );
+
+
+                  // =================================================
+                  // REWARDS
+                  // =================================================
+
+                  addText(
+                          root,
+                          "Rewards",
+                          20,
+                          true
+                  );
+
+                  addArray(
+                          root,
+                          quest.optJSONArray(
+                                  "rewards"
+                          )
+                  );
+
+
+                  // =================================================
+                  // WALKTHROUGH
+                  // =================================================
+
+                  addText(
+                          root,
+                          "Full Walkthrough",
+                          23,
+                          true
+                  );
+
+
+                  JSONArray sections =
+                          quest.optJSONArray(
+                                  "walkthrough"
+                          );
+
+
+                  if (
+                          sections != null
+                  ) {
+
+                      for (
+                              int i = 0;
+                              i < sections.length();
+                              i++
+                      ) {
+
+                          JSONObject section =
+                                  sections.getJSONObject(
+                                          i
+                                  );
+
+
+                          addText(
+                                  root,
+                                  section.optString(
+                                          "title",
+                                          "Section "
+                                                  + (i + 1)
+                                  ),
+                                  19,
+                                  true
+                          );
+
+
+                          JSONArray steps =
+                                  section.optJSONArray(
+                                          "steps"
+                                  );
+
+
+                          if (
+                                  steps == null
+                          ) {
+
+                              continue;
+                          }
+
+
+                          for (
+                                  int j = 0;
+                                  j < steps.length();
+                                  j++
+                          ) {
+
+                              String step =
+                                      steps.optString(
+                                              j,
+                                              ""
+                                      ).trim();
+
+
+                              // ------------------------------------
+                              // ITEM LABEL
+                              // ------------------------------------
+
+                              if (
+                                      isItemStep(
+                                              step
+                                      )
+                              ) {
+
+                                  TextView itemLabel =
+                                          makeText(
+                                                  "ITEM NEEDED",
+                                                  12,
+                                                  true
+                                          );
+
+                                  itemLabel.setTextColor(
+                                          Color.rgb(
+                                                  255,
+                                                  220,
+                                                  120
+                                          )
+                                  );
+
+                                  itemLabel.setPadding(
+                                          dp(12),
+                                          dp(7),
+                                          dp(12),
+                                          0
+                                  );
+
+
+                                  root.addView(
+                                          itemLabel,
+                                          new LinearLayout.LayoutParams(
+                                                  -1,
+                                                  -2
+                                          )
+                                  );
+                              }
+
+
+                              // ------------------------------------
+                              // STEP
+                              // ------------------------------------
+
+                              TextView stepView =
+                                      makeText(
+                                              (j + 1)
+                                                      + ". "
+                                                      + step,
+                                              15,
+                                              false
+                                      );
+
+
+                              stepView.setLineSpacing(
+                                      0,
+                                      1.08f
+                              );
+
+
+                              root.addView(
+                                      stepView,
+                                      new LinearLayout.LayoutParams(
+                                              -1,
+                                              -2
+                                      )
+                              );
+                          }
+                      }
+                  }
+
+
+                  // ------------------------------------------------
+                  // FINISH
+                  // ------------------------------------------------
+
+                  TextView end =
+                          makeText(
+                                  "Quest walkthrough complete.",
+                                  16,
+                                  true
+                          );
+
+                  end.setPadding(
+                          dp(12),
+                          dp(25),
+                          dp(12),
+                          dp(20)
+                  );
+
+
+                  root.addView(
+                          end,
+                          new LinearLayout.LayoutParams(
+                                  -1,
+                                  -2
+                          )
+                  );
+
+
+                  scroll.addView(
+                          root
+                  );
+
+
+                  setContentView(
+                          scroll
+                  );
+
+
+                  scroll.post(
+                          () -> scroll.fullScroll(
+                                  View.FOCUS_UP
+                          )
+                  );
+              }
+
+
+              // ----------------------------------------------------
+              // REQUIREMENTS / REWARDS
+              // ----------------------------------------------------
+
+              private void addArray(
+                      LinearLayout root,
+                      JSONArray array) {
+
+                  if (
+                          array == null
+                          || array.length() == 0
+                  ) {
+
+                      addText(
+                              root,
+                              "None listed.",
+                              14,
+                              false
+                      );
+
+                      return;
+                  }
+
+
+                  boolean found = false;
+
+
+                  for (
+                          int i = 0;
+                          i < array.length();
+                          i++
+                  ) {
+
+                      String value =
+                              array.optString(
+                                      i,
+                                      ""
+                              );
+
+
+                      if (
+                              value.equalsIgnoreCase(
+                                      "See walkthrough"
+                              )
+                              || value.equalsIgnoreCase(
+                                      "See quest walkthrough"
+                              )
+                      ) {
+
+                          continue;
+                      }
+
+
+                      addText(
+                              root,
+                              "• " + value,
+                              14,
+                              false
+                      );
+
+                      found = true;
+                  }
+
+
+                  if (!found) {
+
+                      addText(
+                              root,
+                              "See walkthrough.",
+                              14,
+                              false
+                      );
+                  }
+              }
+
+
+              // ----------------------------------------------------
+              // BACK BUTTON
+              // ----------------------------------------------------
+
+              @Override
+              public void onBackPressed() {
+
+                  showQuestList();
+              }
+          }
+          EOF
+
+
+      # ============================================================
+      # 9. BUILD
+      # ============================================================
+
+      - name: Build QuestMate Complete APK
+        run: |
+          set -e
+
+          gradle \
+            --no-daemon \
+            clean \
+            assembleDebug
+
+
+      # ============================================================
+      # 10. COPY FINAL APK
+      # ============================================================
+
+      - name: Prepare final APK
+        run: |
+          set -e
+
+          cp \
+            app/build/outputs/apk/debug/app-debug.apk \
+            QuestMate-Complete.apk
 
           echo ""
           echo "=========================================="
-          echo " FINAL MANIFEST CHECK"
+          echo " QUESTMATE COMPLETE APK"
           echo "=========================================="
 
-          if ! grep -q 'package="com.questmate.items"' "$MANIFEST"; then
-
-            echo "ERROR: New package was not found."
-
-            exit 1
-
-          fi
-
-          if ! grep -q 'QuestMate Items' "$MANIFEST"; then
-
-            echo "ERROR: QuestMate Items label was not found."
-
-            exit 1
-
-          fi
-
-          echo ""
-          echo "Package:"
-          grep -o 'package="[^"]*"' "$MANIFEST" | head -n 1
-
-          echo ""
-          echo "QuestMate Items package verified."
+          ls -lh QuestMate-Complete.apk
 
 
       # ============================================================
-      # 11. REBUILD APK
+      # 11. UPLOAD ONE ARTIFACT ONLY
       # ============================================================
 
-      - name: Rebuild QuestMate Items APK
-        run: |
-          set -e
-
-          mkdir -p output
-
-          echo "Rebuilding APK..."
-
-          java -jar apktool.jar b \
-            work/questmate \
-            -o output/QuestMate-Items-unsigned.apk
-
-          echo ""
-          echo "Rebuild successful."
-
-          ls -lh output/QuestMate-Items-unsigned.apk
-
-
-      # ============================================================
-      # 12. SET UP ANDROID SDK
-      # ============================================================
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-
-      # ============================================================
-      # 13. INSTALL BUILD TOOLS
-      # ============================================================
-
-      - name: Install Android Build Tools
-        run: |
-          set -e
-
-          yes | sdkmanager \
-            "platform-tools" \
-            "build-tools;36.0.0"
-
-          echo "Android Build Tools installed."
-
-
-      # ============================================================
-      # 14. ZIPALIGN
-      # ============================================================
-
-      - name: Zipalign APK
-        run: |
-          set -e
-
-          "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
-            -f \
-            -p \
-            4 \
-            output/QuestMate-Items-unsigned.apk \
-            output/QuestMate-Items-aligned.apk
-
-          echo "APK aligned."
-
-
-      # ============================================================
-      # 15. CREATE OR RESTORE TEST SIGNING KEY
-      # ============================================================
-
-      - name: Prepare signing key
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -e
-
-          mkdir -p signing
-
-          curl -fsSL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
-            -o signing/artifacts.json
-
-          KEY_ID=$(jq -r '
-            [
-              .artifacts[]
-              | select(.expired == false)
-              | select(.name == "QuestMate-Items-Signing-Key")
-            ]
-            | sort_by(.created_at)
-            | reverse
-            | .[0].id // empty
-          ' signing/artifacts.json)
-
-          if [ -n "$KEY_ID" ]; then
-
-            echo "Existing QuestMate Items signing key found."
-
-            curl -fsSL \
-              -L \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts/${KEY_ID}/zip" \
-              -o signing/key.zip
-
-            mkdir -p signing/extracted
-
-            unzip -o \
-              signing/key.zip \
-              -d signing/extracted
-
-            FOUND_KEY=$(find signing/extracted \
-              -type f \
-              -name "*.keystore" \
-              | head -n 1)
-
-            if [ -z "$FOUND_KEY" ]; then
-
-              echo "ERROR: Signing-key artifact is invalid."
-
-              exit 1
-
-            fi
-
-            cp "$FOUND_KEY" \
-              signing/questmate-items.keystore
-
-            echo "Signing key restored."
-
-          else
-
-            echo "No previous signing key found."
-            echo "Creating the first QuestMate Items key."
-
-            keytool \
-              -genkeypair \
-              -v \
-              -keystore signing/questmate-items.keystore \
-              -alias questmateitems \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass questmateitems123 \
-              -keypass questmateitems123 \
-              -dname \
-              "CN=QuestMate Items, OU=QuestMate, O=QuestMate, L=Brisbane, ST=QLD, C=AU"
-
-            echo "New signing key created."
-
-          fi
-
-
-      # ============================================================
-      # 16. SIGN APK
-      # ============================================================
-
-      - name: Sign QuestMate Items APK
-        run: |
-          set -e
-
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
-            --ks signing/questmate-items.keystore \
-            --ks-pass pass:questmateitems123 \
-            --key-pass pass:questmateitems123 \
-            --ks-key-alias questmateitems \
-            --out output/QuestMate-Items.apk \
-            output/QuestMate-Items-aligned.apk
-
-          echo "APK signed."
-
-
-      # ============================================================
-      # 17. VERIFY SIGNATURE
-      # ============================================================
-
-      - name: Verify APK signature
-        run: |
-          set -e
-
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify \
-            --verbose \
-            output/QuestMate-Items.apk
-
-          echo ""
-          echo "APK signature verified."
-
-
-      # ============================================================
-      # 18. VERIFY PACKAGE NAME
-      # ============================================================
-
-      - name: Verify final APK package
-        run: |
-          set -e
-
-          echo ""
-          echo "=========================================="
-          echo " FINAL APK INFORMATION"
-          echo "=========================================="
-
-          "$ANDROID_HOME/build-tools/36.0.0/aapt2" \
-            dump badging \
-            output/QuestMate-Items.apk \
-            | head -n 10
-
-          echo ""
-          echo "Expected package:"
-          echo "com.questmate.items"
-
-          echo ""
-          echo "Expected app name:"
-          echo "QuestMate Items"
-
-
-      # ============================================================
-      # 19. SHOW FINAL FILE
-      # ============================================================
-
-      - name: Check final APK
-        run: |
-          set -e
-
-          echo ""
-          echo "=========================================="
-          echo " BUILD COMPLETE"
-          echo "=========================================="
-
-          ls -lh output/QuestMate-Items.apk
-
-          echo ""
-          echo "QuestMate Items APK created successfully."
-
-
-      # ============================================================
-      # 20. UPLOAD APK
-      # ============================================================
-
-      - name: Upload QuestMate Items APK
+      - name: Upload QuestMate Complete
         uses: actions/upload-artifact@v4
         with:
-          name: QuestMate-Items-Separate-App
-          path: output/QuestMate-Items.apk
+          name: QuestMate-Complete
+          path: QuestMate-Complete.apk
           if-no-files-found: error
           retention-days: 30
 
 
       # ============================================================
-      # 21. SAVE SIGNING KEY
-      #
-      # This lets future builds update the same separate
-      # QuestMate Items installation.
+      # 12. FINISHED
       # ============================================================
 
-      - name: Save QuestMate Items signing key
-        uses: actions/upload-artifact@v4
-        with:
-          name: QuestMate-Items-Signing-Key
-          path: signing/questmate-items.keystore
-          if-no-files-found: error
-          retention-days: 90
-
-
-      # ============================================================
-      # 22. FINAL MESSAGE
-      # ============================================================
-
-      - name: Finished
+      - name: Build finished
         run: |
           echo ""
           echo "=============================================="
-          echo "       QUESTMATE ITEMS IS READY"
+          echo "       QUESTMATE COMPLETE IS READY"
           echo "=============================================="
           echo ""
-          echo "Download artifact:"
-          echo "QuestMate-Items-Separate-App"
+          echo "Artifact:"
+          echo "QuestMate-Complete"
           echo ""
           echo "APK:"
-          echo "QuestMate-Items.apk"
+          echo "QuestMate-Complete.apk"
           echo ""
           echo "Package:"
-          echo "com.questmate.items"
+          echo "com.questmate.complete"
           echo ""
-          echo "App name:"
-          echo "QuestMate Items"
-          echo ""
-          echo "It is designed to install alongside"
-          echo "the original QuestMate."
+          echo "Features:"
+          echo "- No Wiki links"
+          echo "- No price checker"
+          echo "- Full walkthrough"
+          echo "- Scrollable walkthrough"
+          echo "- Items needed at top"
+          echo "- ITEM NEEDED labels throughout"
+          echo "- Quest search"
           echo ""
           echo "=============================================="
